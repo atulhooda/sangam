@@ -7,12 +7,13 @@ Sangam is a settlement rail for the agent economy. An AI agent pays an Indian me
 This guide takes you from a fresh machine to a real payment. Do the parts in order.
 
 - [How it works](#how-it-works)
-- [Part 1: Install](#part-1-install)
+- [Part 1: Install](#part-1-install) (macOS, Linux, Windows)
 - [Part 2: Run it with mocks (no keys)](#part-2-run-it-with-mocks-no-keys)
 - [Part 3: Create accounts and keys](#part-3-create-accounts-and-keys)
 - [Part 4: Turn on the real services](#part-4-turn-on-the-real-services)
 - [Part 5: Make a real payment](#part-5-make-a-real-payment)
 - [Part 6: Deploy](#part-6-deploy)
+- [Running on Windows](#running-on-windows)
 - [Reference](#reference): commands, env variables, mode switches, layout
 - [Troubleshooting](#troubleshooting)
 - [What's verified](#whats-verified)
@@ -46,26 +47,35 @@ The payer is an AI agent, not a person, so there's no QR code. The merchant's se
 
 ## Part 1: Install
 
-**You need:** macOS or Linux, Node.js 22, npm.
+**You need:** Node.js 22 and npm, on macOS, Linux or Windows.
+
+**1. Install Node 22**
+
+| OS | How |
+|---|---|
+| macOS | `brew install node@22`, then `export PATH="/opt/homebrew/opt/node@22/bin:$PATH"` (add that line to `~/.zshrc` to keep it) |
+| Linux | your package manager, or https://nodejs.org |
+| Windows | `winget install OpenJS.NodeJS.LTS`, or the installer from https://nodejs.org. Open a **new** terminal afterwards. |
+
+**2. Install the project**
 
 ```bash
-# macOS, if Node isn't installed:
-brew install node@22
-export PATH="/opt/homebrew/opt/node@22/bin:$PATH"   # add this line to ~/.zshrc to keep it
-
-node -v        # should print v22.x
-
+node -v             # should print v22.x
 cd sangam
 npm install
 npm run typecheck   # should print nothing and exit cleanly
 ```
 
-There's already a `.env` in the folder. If yours is missing, create it:
+**3. Create `.env`** (skip if the folder already has one)
 
 ```bash
-cp .env.example .env
-openssl rand -hex 32   # paste the output as SETTLEMENT_SHARED_SECRET in .env
+cp .env.example .env        # Windows PowerShell: Copy-Item .env.example .env
+npm run gen-keys            # prints SETTLEMENT_SHARED_SECRET and an EVM key
 ```
+
+Paste the printed `SETTLEMENT_SHARED_SECRET` into `.env`. Keep the rest of the output for step 3.2.
+
+Every `npm run …` command in this guide works the same on all three OSes. On Windows, see [Running on Windows](#running-on-windows) for the few other commands that differ.
 
 ---
 
@@ -77,7 +87,7 @@ Open three terminals in `sangam/`:
 
 ```bash
 # terminal 1: settlement agent in simulation mode
-SKIP_CHAIN_VERIFY=true npm run settlement
+npm run settlement:sim
 
 # terminal 2: merchant
 npm run merchant
@@ -96,7 +106,9 @@ curl -i "localhost:3000/book?from=CSMT&to=PUNE"  # the real 402 invoice (PAYMENT
 npm run simulate -- 3                            # three payments from the command line
 ```
 
-`SKIP_CHAIN_VERIFY=true` on the command line only affects that one run. The simulate buttons only appear in this mode.
+On Windows PowerShell, type `curl.exe` instead of `curl`. Or just open http://localhost:3000/quote in a browser.
+
+`settlement:sim` is the normal settlement agent with `SKIP_CHAIN_VERIFY=true`: it trusts payment notices without checking the chain. Only that run is affected; `.env` isn't changed. The simulate buttons only appear in this mode.
 
 ---
 
@@ -124,13 +136,13 @@ New portal accounts come with testnet HBAR. Each account needs about 10 HBAR. Th
 
 ### 3.2 One EVM key (for 0G and ENS)
 
-Generate a fresh one:
+Use the key `npm run gen-keys` printed in Part 1, or run it again for a new one:
 
 ```bash
-node -e 'const w=require("ethers").Wallet.createRandom(); console.log("address:", w.address); console.log("key:    ", w.privateKey)'
+npm run gen-keys
 ```
 
-Put the key in both lines, and keep the address handy for the faucets:
+Put the key in both lines, and keep the printed address handy for the faucets:
 
 ```bash
 OG_PRIVATE_KEY=0x...
@@ -286,12 +298,46 @@ VITE_MERCHANT_URL=https://<merchant>.onrender.com \
 npm --workspace @sangam/dashboard run build      # output: apps/dashboard/dist
 ```
 
+Or put both `VITE_*` values in `.env` and run just the last line. That works on every OS. On a static host like Render, set them as the site's env vars with build command `npm install && npm --workspace @sangam/dashboard run build` and publish directory `apps/dashboard/dist`.
+
 **Then:** re-run `register-merchant` with `--url https://<merchant>.onrender.com/book`, so agents find the public shop.
 
 Notes:
 - Free hosts have temporary disks, so `data/settlements.json` resets on restart. That's fine for a demo.
 - Set the env vars in the host's dashboard. Never commit `.env`.
-- Generate a new `SETTLEMENT_SHARED_SECRET` for the deployed services.
+- Generate a new `SETTLEMENT_SHARED_SECRET` for the deployed services (`npm run gen-keys`).
+
+---
+
+## Running on Windows
+
+You have two options.
+
+**Option A: WSL (easiest).** WSL gives you a Linux terminal inside Windows, and every command in this guide then works exactly as written.
+
+1. In an **admin** PowerShell: `wsl --install`, then restart.
+2. Open **Ubuntu** from the Start menu and install Node 22 inside it, e.g. with `nvm` or the NodeSource packages from https://nodejs.org.
+3. Put the project inside the Linux file system (e.g. `~/sangam`), not under `/mnt/c/…`, which is much slower.
+4. Follow this guide as if you were on Linux. Browsers on Windows can open `http://localhost:5173` directly.
+
+**Option B: native PowerShell.** Every `npm run …` command works unchanged. These are the only differences:
+
+| In this guide | In PowerShell |
+|---|---|
+| `cp .env.example .env` | `Copy-Item .env.example .env` |
+| `curl …` | `curl.exe …` (plain `curl` is a different command in Windows PowerShell) |
+| `export PATH=…` | not needed; the Node installer sets PATH |
+| `lsof -nP -iTCP:3000 -sTCP:LISTEN` | `netstat -ano \| findstr :3000`, then `taskkill /PID <pid> /F` |
+| `\` at the end of a line (multi-line commands) | `` ` `` (backtick), or put the whole command on one line |
+| `VAR=value npm run …` | `$env:VAR="value"; npm run …` (stays set for that window) |
+
+For example, the ENS step on one line in PowerShell:
+
+```powershell
+npm run register-merchant -- --name yourshop-tickets.eth --url http://localhost:3000/book --payTo 0.0.yyyyy --price 4900 --upi tickets@razorpay
+```
+
+If Windows Firewall asks about Node.js when a server starts, **Allow** on private networks is enough for local use.
 
 ---
 
@@ -302,10 +348,12 @@ Notes:
 | Command | What it does |
 |---|---|
 | `npm run settlement` | Start settlement-agent (:3001) |
+| `npm run settlement:sim` | Start settlement-agent in simulation mode (enables simulate buttons + `npm run simulate`) |
+| `npm run gen-keys` | Print a new shared secret and EVM key |
 | `npm run merchant` | Start merchant-api (:3000) |
 | `npm run dashboard` | Start the dashboard (:5173) |
 | `npm run buy -- --merchant <name> [--count N] [--from CSMT --to PUNE]` | Run the buyer agent |
-| `npm run simulate -- [N] [--short]` | Send fake notices (needs `SKIP_CHAIN_VERIFY=true` on settlement) |
+| `npm run simulate -- [N] [--short]` | Send fake notices (needs `npm run settlement:sim` running) |
 | `npm run setup-hedera` | Associate USDC, print balances |
 | `npm run create-topic` | Create the HCS receipt topic |
 | `npm run setup-0g [-- fund]` | List 0G providers / fund the ledger and provider |
@@ -359,8 +407,10 @@ Everything else in `.env.example` has a working default.
 | Symptom | Likely cause and fix |
 |---|---|
 | `Missing env var X` | Fill in X in `.env` (see the table above). |
-| `command not found: node` | Run `export PATH="/opt/homebrew/opt/node@22/bin:$PATH"`. |
-| `EADDRINUSE` on 3000/3001/5173 | Something's already running there: `lsof -nP -iTCP:3000 -sTCP:LISTEN`, then stop it. |
+| `command not found: node` (macOS) | Run `export PATH="/opt/homebrew/opt/node@22/bin:$PATH"`. |
+| `'node' is not recognized` (Windows) | Open a new terminal after installing Node. If it persists, reinstall Node and tick "Add to PATH". |
+| `EADDRINUSE` on 3000/3001/5173 | Something's already running there. macOS/Linux: `lsof -nP -iTCP:3000 -sTCP:LISTEN`. Windows: `netstat -ano \| findstr :3000`. Stop that process. |
+| Windows: `running scripts is disabled on this system` | PowerShell blocks npm's script wrapper. Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, or use Command Prompt. |
 | Circle faucet won't send USDC | The account isn't associated yet. Run `npm run setup-hedera` first. |
 | Settlement `failed: transaction … not found on mirror node` | The Mirror Node can lag; the agent retries for ~15s. If it persists, check the tx on HashScan. |
 | Settlement `failed: treasury credited 0 …` | `hederaPayTo` (local file or ENS record) isn't your treasury, or `HEDERA_USDC_TOKEN_ID` is wrong. |
@@ -372,7 +422,7 @@ Everything else in `.env.example` has a working default.
 | 0G decision is always "hold: not valid decision JSON" | The model isn't returning JSON. Try another provider from `setup-0g`. |
 | Dashboard: "settlement agent unreachable" | Start `npm run settlement`. Deployed: check `VITE_SETTLEMENT_URL` and `DASHBOARD_ORIGIN`. |
 | HashScan link shows "not found" | Wait a few seconds. If it persists, search the tx ID on hashscan.io by hand; the link format hasn't been checked against a real tx yet. |
-| No simulate buttons on the dashboard | They only appear with `SKIP_CHAIN_VERIFY=true` on settlement-agent. |
+| No simulate buttons on the dashboard | Start the agent with `npm run settlement:sim` instead of `npm run settlement`. |
 
 ---
 
@@ -391,6 +441,7 @@ Everything else in `.env.example` has a working default.
 | ENS lookup, `register-merchant` | ⬜ Needs a Sepolia ENSv2 name |
 | RazorpayX payout | ⬜ Needs test keys; request body unverified |
 | HashScan link format | ⬜ Needs a real tx |
+| Windows (native or WSL) | ⬜ Not run yet; only tested on macOS. The code uses no OS-specific APIs. |
 
 ## Built with
 

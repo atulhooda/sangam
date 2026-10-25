@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "tsx src/server.ts"
+    "start": "tsx src/server.ts",
+    "start:sim": "tsx src/sim.ts"
   },
   "dependencies": {
     "@0gfoundation/0g-compute-ts-sdk": "^0.8.4",
