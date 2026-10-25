@@ -1,0 +1,9 @@
+{
+  "tickets.sangam.eth": {
+    "endpoint": "http://localhost:3000/book",
+    "hederaPayTo": "0.0.1002",
+    "network": "hedera:testnet",
+    "priceInrPaise": "4900",
+    "upiHandle": "tickets@razorpay"
+  }
+}

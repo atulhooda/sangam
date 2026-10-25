@@ -1,0 +1,17 @@
+{
+  "name": "@sangam/settlement-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@0gfoundation/0g-compute-ts-sdk": "^0.8.4",
+    "@sangam/shared": "*",
+    "@x402/hedera": "^2.28.0",
+    "ethers": "^6.13.0",
+    "express": "^5.1.0",
+    "openai": "^4.77.0"
+  }
+}
