@@ -14,8 +14,9 @@
     "setup-hedera": "tsx scripts/setup-hedera.ts",
     "create-topic": "tsx scripts/create-hcs-topic.ts",
     "setup-0g": "tsx scripts/setup-0g.ts",
-    "register-merchant": "tsx scripts/register-merchant.ts",
-    "simulate": "tsx scripts/simulate-settlement.ts"
+    "simulate": "tsx scripts/simulate-settlement.ts",
+    "setup-ens": "tsx scripts/setup-ens.ts",
+    "add-merchant": "tsx scripts/add-merchant.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
