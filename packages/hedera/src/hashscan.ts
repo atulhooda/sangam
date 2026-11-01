@@ -15,3 +15,7 @@ export function hashscanTxUrl(txId: string, network = "testnet"): string {
 export function hashscanTopicUrl(topicId: string, network = "testnet"): string {
   return `https://hashscan.io/${network}/topic/${topicId}`;
 }
+
+export function hashscanAccountUrl(accountId: string, network = "testnet"): string {
+  return `https://hashscan.io/${network}/account/${accountId}`;
+}
