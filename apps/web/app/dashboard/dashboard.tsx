@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Invoice, Quote, Settlement, Stats } from "@/lib/types";
+import type { EnsView, Invoice, Quote, Settlement, Stats } from "@/lib/types";
 import { ThemeToggle } from "../components/theme-toggle";
 import { clock, hashscanTopic, hashscanTx, isInFlight, isSimTx, rupees, shortId, shortTx, timeAgo, usdc } from "./format";
 
@@ -11,6 +11,7 @@ function useDashboardData() {
   const [settlements, setSettlements] = useState<Settlement[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [ens, setEns] = useState<EnsView | { error: string } | null>(null);
   const [invoice, setInvoice] = useState<{ decoded: Invoice; raw: string } | null>(null);
   const [lastOk, setLastOk] = useState<number | null>(null);
   const [error, setError] = useState(false);
@@ -44,6 +45,10 @@ function useDashboardData() {
     tick();
     loadInvoice();
     fetch("/merchant/quote").then((r) => r.json()).then(setQuote).catch(() => undefined);
+    fetch("/api/ens", { cache: "no-store" })
+      .then((r) => r.json())
+      .then(setEns)
+      .catch(() => setEns({ error: "Could not reach /api/ens" }));
     const a = setInterval(tick, 1000);
     const b = setInterval(loadInvoice, 30_000);
     return () => {
@@ -52,7 +57,7 @@ function useDashboardData() {
     };
   }, [tick, loadInvoice]);
 
-  return { settlements, stats, quote, invoice, lastOk, error, refresh: tick };
+  return { settlements, stats, quote, ens, invoice, lastOk, error, refresh: tick };
 }
 
 /** Re-render every second so "x seconds ago" labels stay fresh. */
@@ -603,23 +608,78 @@ function InvoiceCard({ invoice }: { invoice: { decoded: Invoice; raw: string } |
   );
 }
 
-function MerchantCard({ quote }: { quote: Quote | null }) {
+function ExtLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a className="text-accent underline-offset-2 hover:underline" href={href} target="_blank" rel="noreferrer">
+      {children} ↗
+    </a>
+  );
+}
+
+const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+function MerchantCard({ quote, ens }: { quote: Quote | null; ens: EnsView | { error: string } | null }) {
+  const view = ens && !("error" in ens) ? ens : null;
   return (
     <Card>
-      <CardHead title="Merchant" hint="Found by ENS name" />
+      <CardHead
+        title="Merchant on ENS"
+        hint={view?.source === "ens" ? "Read live from ENSv2 on Sepolia" : "Found by ENS name"}
+        right={
+          view ? (
+            view.source === "ens" ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-okbg px-2 py-0.5 text-[11px] font-medium text-ok">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-ok" /> live
+              </span>
+            ) : (
+              <MockTag>ENS offline</MockTag>
+            )
+          ) : null
+        }
+      />
       <div className="px-5 py-3">
-        {quote ? (
+        {view ? (
           <>
-            <p className="mono mb-1 text-sm font-semibold text-accent">{quote.merchant}</p>
-            <LedgerRow k="Price" v={<>₹{quote.priceInr} <span className="text-muted">· {Number(quote.priceUsdc).toFixed(4)} USDC</span></>} />
-            <LedgerRow k="UPI handle" v={<span className="mono text-xs">{quote.upiHandle}</span>} />
-            <LedgerRow k="Hedera account" v={<span className="mono text-xs">{quote.payTo}</span>} />
-            <div className="flex flex-wrap gap-1.5 pb-1 pt-2">
-              {quote.routes.map((r) => (
-                <span key={r} className="mono rounded-md border border-line px-2 py-0.5 text-[11px] text-muted">{r.replace("-", " → ")}</span>
+            <p className="mono mb-1 break-all text-sm font-semibold text-accent">
+              <ExtLink href={view.links.app}>{view.name}</ExtLink>
+            </p>
+            <p className="mb-2 text-xs text-muted">
+              Issued by Sangam under <span className="mono">{view.parent}</span>. The merchant needs no wallet.
+            </p>
+            {quote && <LedgerRow k="Price" v={<>₹{quote.priceInr} <span className="text-muted">· {Number(quote.priceUsdc).toFixed(4)} USDC</span></>} />}
+
+            <p className="mb-1 mt-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Text records</p>
+            <div className="rounded-lg bg-surface2 px-3 py-1">
+              {view.records.map((r) => (
+                <div key={r.key} className="flex items-baseline justify-between gap-3 py-1">
+                  <span className="mono shrink-0 text-[11px] text-muted">{r.key}</span>
+                  <span className="mono min-w-0 truncate text-right text-[11px]" title={r.value}>{r.value}</span>
+                </div>
               ))}
             </div>
+
+            {(view.registry || view.resolver) && (
+              <>
+                <p className="mb-1 mt-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">ENSv2 contracts</p>
+                {view.registry && view.links.registry && (
+                  <LedgerRow k="Subname registry" v={<span className="mono text-xs"><ExtLink href={view.links.registry}>{short(view.registry)}</ExtLink></span>} />
+                )}
+                {view.resolver && view.links.resolver && (
+                  <LedgerRow k="Resolver" v={<span className="mono text-xs"><ExtLink href={view.links.resolver}>{short(view.resolver)}</ExtLink></span>} />
+                )}
+              </>
+            )}
+
+            {quote && (
+              <div className="flex flex-wrap gap-1.5 pb-1 pt-3">
+                {quote.routes.map((r) => (
+                  <span key={r} className="mono rounded-md border border-line px-2 py-0.5 text-[11px] text-muted">{r.replace("-", " → ")}</span>
+                ))}
+              </div>
+            )}
           </>
+        ) : ens && "error" in ens ? (
+          <p className="my-3 rounded-lg bg-badbg p-3 text-sm text-bad">{ens.error}</p>
         ) : (
           <p className="py-4 text-sm text-muted">Loading…</p>
         )}
@@ -703,7 +763,7 @@ function PaymentsTable({ rows, selectedId, onSelect, now }: { rows: Settlement[]
 /* ───────────────────────── page ───────────────────────── */
 
 export function Dashboard() {
-  const { settlements, stats, quote, invoice, lastOk, error, refresh } = useDashboardData();
+  const { settlements, stats, quote, ens, invoice, lastOk, error, refresh } = useDashboardData();
   const now = useNow();
   const [pinnedId, setPinnedId] = useState<string | null>(null);
 
@@ -750,7 +810,7 @@ export function Dashboard() {
               }}
             />
             <InvoiceCard invoice={invoice} />
-            <MerchantCard quote={quote} />
+            <MerchantCard quote={quote} ens={ens} />
           </div>
         </div>
       </main>
