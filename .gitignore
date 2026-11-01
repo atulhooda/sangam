@@ -4,3 +4,4 @@ data/settlements.json
 data/*.tmp
 dist/
 .DS_Store
+apps/web/.next
