@@ -6,6 +6,9 @@ import { parseAbi } from "viem";
  */
 export const ENSV2_SEPOLIA = {
   ETHRegistry: "0xd4ebcbbdf463c9c45784603db0ddd499bc44a8b4",
+  ETHRegistrar: "0xf633e7fc17e2bbe0d0965d18ec1821dcb754a3d3",
+  /** Testnet stand-in for USDC: the registrar's payment token, mintable by anyone. */
+  MockUSDC: "0x240b0316df57887dbbe58b586508b19e633a14aa",
   VerifiableFactory: "0xda70306c98e97ece36f997a21368e53298572991",
   UserRegistryImpl: "0x9bd8a88719068d09ecee662f36c0e3856708366a",
   PermissionedResolverImpl: "0x115eb53f0c60696633855f90b138178fb40b2b2c",
@@ -48,4 +51,20 @@ export const REGISTRY_ABI = parseAbi([
 export const RESOLVER_ABI = parseAbi([
   "function setText(bytes name, string key, string value)",
   "function multicall(bytes[] calls) returns (bytes[])",
+]);
+
+/** ENSv2 ETHRegistrar: commit-reveal, paid in ERC-20 (USDC/DAI), not ETH. */
+export const REGISTRAR_ABI = parseAbi([
+  "function getRegisterPrice(string label, uint64 duration, address paymentToken) view returns (uint256 base, uint256 premium)",
+  "function makeCommitment(string label, address owner, bytes32 secret, address subregistry, address resolver, uint64 duration, bytes32 referrer) pure returns (bytes32)",
+  "function commit(bytes32 commitment)",
+  "function MIN_COMMITMENT_AGE() view returns (uint64)",
+  "function register(string label, address owner, bytes32 secret, address subregistry, address resolver, uint64 duration, address paymentToken, bytes32 referrer) returns (uint256 tokenId)",
+]);
+
+export const ERC20_ABI = parseAbi([
+  "function balanceOf(address) view returns (uint256)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function mint(address to, uint256 amount)",
 ]);
