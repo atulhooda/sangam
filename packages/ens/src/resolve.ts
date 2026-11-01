@@ -25,6 +25,11 @@ export async function resolveMerchant(ensName: string): Promise<MerchantRecord> 
   return record;
 }
 
+/** Drop a cached lookup, e.g. right after Sangam rewrites the merchant's records. */
+export function forgetMerchant(ensName: string) {
+  cache.delete(ensName);
+}
+
 async function readEnsMerchant(ensName: string): Promise<MerchantRecord> {
   const client = sepoliaClient();
   const name = normalize(ensName);
