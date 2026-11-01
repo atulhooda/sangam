@@ -1,0 +1,284 @@
+@import "tailwindcss";
+
+/* Dark mode is class-driven (html.dark) so the toggle can override the OS setting */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Sangam palette — warm cream/orange */
+@theme {
+  --color-bg: #f7f5f0;
+  --color-surface: #ffffff;
+  --color-surface2: #faf8f4;
+  --color-ink: #1c1b19;
+  --color-muted: #6b6760;
+  --color-line: #e4e0d8;
+  --color-accent: #b5541c;
+  --color-accentbg: #fbeee5;
+  --color-ok: #1f7a4d;
+  --color-okbg: #e3f2ea;
+  --color-warn: #8a5a00;
+  --color-warnbg: #fbefd5;
+  --color-bad: #a3271f;
+  --color-badbg: #f8e1df;
+  --color-info: #3d5a80;
+  --color-infobg: #e3eaf3;
+}
+
+/* Dark tokens applied when html carries the .dark class */
+html.dark {
+  --color-bg: #151412;
+  --color-surface: #1e1d1a;
+  --color-surface2: #24221f;
+  --color-ink: #ece9e2;
+  --color-muted: #a19c93;
+  --color-line: #33312c;
+  --color-accent: #e98a4f;
+  --color-accentbg: #3a2416;
+  --color-ok: #6fd3a0;
+  --color-okbg: #173226;
+  --color-warn: #f0c062;
+  --color-warnbg: #3a2e12;
+  --color-bad: #f08a80;
+  --color-badbg: #3b1a17;
+  --color-info: #9bb8e0;
+  --color-infobg: #1c2836;
+}
+
+html {
+  color-scheme: light;
+  scroll-behavior: smooth;
+  /* Paint the root itself, so any overscroll edge is page-coloured, never white */
+  background: var(--color-bg);
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* No sideways scrolling, and no rubber-band bounce past the page edges
+   (macOS trackpads / iOS), which is what exposed blank space above the hero. */
+html,
+body {
+  overflow-x: clip;
+  overscroll-behavior: none;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Keyboard focus: a clear accent ring on anything focusable (mouse clicks don't show it) */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+tr:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Faint line grid behind the hero, fading out toward the edges */
+.hero-grid {
+  background-image:
+    linear-gradient(to right, var(--color-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-line) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: 0.6;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 30%, transparent 75%);
+}
+
+/* Light film grain over the whole page so flat areas don't look empty */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0.045;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+html.dark body::after {
+  opacity: 0.06;
+}
+
+/* Subtle dotted grid behind diagram panels */
+.dot-grid {
+  background-image: radial-gradient(var(--color-line) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* Money moving along the confluence lines */
+.flow-line {
+  stroke-dasharray: 6 6;
+  stroke-linecap: round;
+  animation: flow 1.2s linear infinite;
+}
+@keyframes flow {
+  to { stroke-dashoffset: -24; }
+}
+
+/* Soft pulse behind the Sangam node */
+.pulse-ring {
+  animation: pulse-ring 2.4s ease-out infinite;
+}
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+
+/* ── Five-steps timeline ── */
+
+/* Dots flowing down the rail, coloured blue → orange → green by the gradient
+   underneath and cut into dots by the mask. */
+.dot-rail {
+  background: linear-gradient(to bottom, var(--color-info), var(--color-accent), var(--color-ok));
+  -webkit-mask-image: radial-gradient(circle, #000 1.3px, transparent 1.7px);
+  mask-image: radial-gradient(circle, #000 1.3px, transparent 1.7px);
+  -webkit-mask-size: 3px 10px;
+  mask-size: 3px 10px;
+  -webkit-mask-repeat: repeat-y;
+  mask-repeat: repeat-y;
+  animation: dot-rail 0.8s linear infinite;
+}
+@keyframes dot-rail {
+  from { -webkit-mask-position: 0 0; mask-position: 0 0; }
+  to { -webkit-mask-position: 0 10px; mask-position: 0 10px; }
+}
+
+/* A glowing "payment" hopping down the rail. Each step has its own packet that
+   runs from its badge (centre 16px) to the next badge (100% + 16px) during its
+   1.2s slot (20%) of a shared 6s cycle; delays are step × 1.2s. Timing is per
+   step, so it stays in sync with the line packets at any layout height. */
+.rail-packet {
+  top: 10.5px;
+  opacity: 0;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 20%, transparent),
+    0 0 14px 2px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  animation: rail-packet 6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes rail-packet {
+  0% { top: 10.5px; opacity: 0; }
+  2% { opacity: 1; }
+  18% { opacity: 1; }
+  20% { top: calc(100% + 10.5px); opacity: 0; }
+  100% { top: calc(100% + 10.5px); opacity: 0; }
+}
+
+/* Ripple out of each step number, staggered so they fire 1 → 5 in turn. */
+.step-ripple {
+  opacity: 0;
+  animation: step-ripple 6s ease-out infinite;
+}
+@keyframes step-ripple {
+  0% { transform: scale(1); opacity: 0.45; }
+  20% { transform: scale(2.1); opacity: 0; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+
+/* Short dotted connector from each step to its card, flowing right. */
+.dot-link {
+  background: var(--color-accent);
+  opacity: 0.7;
+  -webkit-mask-image: radial-gradient(circle, #000 1.3px, transparent 1.7px);
+  mask-image: radial-gradient(circle, #000 1.3px, transparent 1.7px);
+  -webkit-mask-size: 8px 3px;
+  mask-size: 8px 3px;
+  -webkit-mask-repeat: repeat-x;
+  mask-repeat: repeat-x;
+  animation: dot-link 0.8s linear infinite;
+}
+@keyframes dot-link {
+  from { -webkit-mask-position: 0 0; mask-position: 0 0; }
+  to { -webkit-mask-position: 8px 0; mask-position: 8px 0; }
+}
+
+/* A glowing dot that runs along each step's line into its card. Same 6s cycle
+   as the rail packet; each line's delay matches when the rail packet passes it. */
+.link-packet {
+  left: 0;
+  opacity: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent),
+    0 0 12px 2px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  animation: link-packet 6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes link-packet {
+  0% { left: 0; opacity: 0; }
+  2% { opacity: 1; }
+  16% { left: calc(100% - 9px); opacity: 1; }
+  19% { left: calc(100% - 9px); opacity: 0; }
+  100% { left: calc(100% - 9px); opacity: 0; }
+}
+
+/* Vertical variant of .dot-link (dashboard pipeline on mobile): dots flow down */
+.dot-link-v {
+  -webkit-mask-size: 3px 8px;
+  mask-size: 3px 8px;
+  -webkit-mask-repeat: repeat-y;
+  mask-repeat: repeat-y;
+  animation-name: dot-link-v;
+}
+@keyframes dot-link-v {
+  from { -webkit-mask-position: 0 0; mask-position: 0 0; }
+  to { -webkit-mask-position: 0 8px; mask-position: 0 8px; }
+}
+
+/* ── Four-departments record panel ── */
+
+/* Each line of a group slides in as the department "writes" it */
+.record-line-in {
+  animation: record-line-in 0.45s ease-out both;
+}
+@keyframes record-line-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Typing cursor at the end of the line being written */
+.record-cursor {
+  animation: record-cursor 0.9s steps(1) infinite;
+}
+@keyframes record-cursor {
+  50% { opacity: 0; }
+}
+
+/* Department badge pops when its group is written */
+.record-badge-pop {
+  animation: record-badge-pop 0.5s ease-out;
+}
+@keyframes record-badge-pop {
+  0% { transform: scale(0.4); }
+  60% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+/* "paid" lands with a green flash */
+.record-paid {
+  animation: record-paid 1.4s ease-out;
+}
+@keyframes record-paid {
+  0% { background: rgb(111 211 160 / 0.45); box-shadow: 0 0 0 0 rgb(111 211 160 / 0.6); }
+  100% { background: rgb(111 211 160 / 0.12); box-shadow: 0 0 0 10px rgb(111 211 160 / 0); }
+}
+
+/* Quick ripple on the active department's number */
+.step-ripple-fast {
+  animation: step-ripple-fast 1.8s ease-out infinite;
+}
+@keyframes step-ripple-fast {
+  0% { transform: scale(1); opacity: 0.45; }
+  60%, 100% { transform: scale(1.8); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-line, .pulse-ring, .dot-rail, .dot-link, .step-ripple, .step-ripple-fast,
+  .record-line-in, .record-cursor, .record-badge-pop, .record-paid { animation: none; }
+  .rail-packet, .link-packet { display: none; }
+}
