@@ -36,6 +36,10 @@ export type Settlement = {
   chainVerified?: boolean;
   /** HCS topic the receipt went to, so the dashboard can link it. */
   hcsTopicId?: string | null;
+  /** The price this order was quoted at, when it isn't the merchant's fixed price (ONDC). */
+  quotedInrPaise?: number | null;
+  /** Set when the payment bought an order on ONDC. */
+  ondc?: OndcOrderInfo | null;
   status: SettlementStatus;
   error: string | null;
   createdAt: string;
@@ -48,6 +52,24 @@ export type SettlementNotice = {
   hederaTxId: string;
   payer?: string;
   usdcAmount: string;
+  /** Per-order quote (ONDC); falls back to the merchant's ENS price. */
+  quotedInrPaise?: number;
+  ondc?: OndcOrderInfo;
+};
+
+/** The ONDC side of a settlement: which seller, which order, where the rupees go. */
+export type OndcOrderInfo = {
+  transactionId: string;
+  orderId: string;
+  state: string;
+  bppId: string;
+  bppUri: string;
+  providerId: string;
+  providerName: string;
+  items: { id: string; name: string; count: number }[];
+  quoteInrPaise: number;
+  /** Seller's UPI from the on_init settlement details. */
+  sellerUpi: string;
 };
 
 export type Stats = {
