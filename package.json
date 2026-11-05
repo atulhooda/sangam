@@ -6,8 +6,13 @@
     "packages/*",
     "apps/*"
   ],
+  "overrides": {
+    "node-forge": "1.3.1",
+    "snarkjs": "0.7.6"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "dev": "npm --workspace @sangam/web run dev",
     "web": "npm --workspace @sangam/web run dev",
     "web:build": "npm --workspace @sangam/web run build",
     "gen-keys": "tsx scripts/gen-keys.ts",
@@ -18,7 +23,8 @@
     "setup-ens": "tsx scripts/setup-ens.ts",
     "add-merchant": "tsx scripts/add-merchant.ts",
     "register-parent": "tsx scripts/register-parent.ts",
-    "buy-ondc": "tsx scripts/buy-ondc.ts"
+    "buy-ondc": "tsx scripts/buy-ondc.ts",
+    "mcp": "tsx packages/mcp/src/index.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
