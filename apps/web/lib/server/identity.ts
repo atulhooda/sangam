@@ -12,12 +12,66 @@ const FILE = path.join(DATA_DIR, "identities.local.json");
  * chose to disclose — never the Aadhaar number. The nullifier is Self's
  * anti-reuse identifier: stable per person per app scope, useless to anyone
  * else, so it's the id we dedupe on.
+ *
+ * One row per person per role: the same person can be a buyer and, with a
+ * separate sign-in and a company certificate, a merchant. A session carries
+ * one role, so a buyer session never opens a merchant desk.
  */
 
+export type Role = "merchant" | "user";
+
+export type MerchantCert = {
+  companyName: string;
+  /** GSTIN / CIN / company registration number, as the merchant typed it. */
+  registrationNumber: string;
+  fileName: string;
+  mime: "application/pdf" | "image/png" | "image/jpeg";
+  size: number;
+  sha256: string;
+  /** File name inside DATA_DIR/certs (on the Railway volume in production). */
+  storedAs: string;
+  uploadedAt: string;
+  /** No reviewer workflow yet: "submitted" opens the desk. */
+  status: "submitted";
+};
+
+/**
+ * What Sangam set up for a merchant after the certificate: its own Hedera
+ * deposit account and its <label>.sangam.eth records (sangam.status=verified).
+ */
+export type MerchantShop = {
+  upiHandle: string;
+  priceInrPaise: number;
+  /** The merchant's own x402 endpoint, if it has one; otherwise Sangam's pay link. */
+  endpoint: string | null;
+  /** Its own Hedera account (sangam.payTo). Created once, kept across retries. */
+  depositAccountId?: string;
+  /** The url written to ENS. */
+  publishedUrl?: string;
+  ensTxs?: { step: string; tx: string }[];
+  /** Set when ENS + Hedera setup finished; cleared when the shop details change. */
+  provisionedAt?: string;
+  /** Last setup failure, shown on the desk with a retry button. */
+  error?: string;
+};
+
+/**
+ * A buyer's agent wallet: its own Hedera account, created by Sangam and keyed
+ * to the operator, so the buyer's agent can sign x402 payments without an
+ * approval prompt (custodial, testnet). Funded from the demo faucet or any
+ * wallet.
+ */
+export type BuyerWallet = {
+  accountId: string;
+  createdAt: string;
+  /** Test USDC sent by Sangam's faucet so far (atomic units), capped per buyer. */
+  fundedAtomic: string;
+};
+
 export type VerifiedIdentity = {
-  /** Self nullifier: one per person per scope, so re-verification updates in place. */
+  /** Self nullifier: one per person per scope. With role, the row's key. */
   nullifier: string;
-  role: "merchant" | "user";
+  role: Role;
   /** What the person named themselves on the desk: a merchant's ENS name, or a user label. */
   label: string;
   /** Self-generated user identifier (a UUID the desk page assigned). */
@@ -26,6 +80,12 @@ export type VerifiedIdentity = {
   attestationId: number;
   /** What the proof disclosed (name, date_of_birth, …); only non-empty fields. */
   disclosed: Record<string, string>;
+  /** Merchants only: the company certificate uploaded after the Self proof. */
+  cert?: MerchantCert;
+  /** Merchants only: deposit account + ENS records, set up after the certificate. */
+  shop?: MerchantShop;
+  /** Buyers only: the agent's own Hedera wallet. */
+  wallet?: BuyerWallet;
   verifiedAt: string;
   updatedAt: string;
 };
@@ -65,22 +125,37 @@ export function listIdentities(): VerifiedIdentity[] {
   return readAll().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-export function findIdentityByNullifier(nullifier: string): VerifiedIdentity | undefined {
-  return readAll().find((i) => i.nullifier === nullifier);
+export function findIdentity(nullifier: string, role: Role): VerifiedIdentity | undefined {
+  return readAll().find((i) => i.nullifier === nullifier && i.role === role);
 }
 
-export function findIdentityByUserId(userId: string): VerifiedIdentity | undefined {
-  return readAll().find((i) => i.userId === userId);
-}
+export class LabelTakenError extends Error {}
 
+/**
+ * Record a verified person in a role. A merchant name belongs to whoever
+ * proved it first: another person claiming it gets LabelTakenError.
+ * Re-verifying refreshes the disclosures and keeps the certificate.
+ */
 export async function upsertIdentity(
-  identity: Omit<VerifiedIdentity, "verifiedAt" | "updatedAt">,
+  identity: Omit<VerifiedIdentity, "verifiedAt" | "updatedAt" | "cert" | "shop" | "wallet">,
 ): Promise<VerifiedIdentity> {
   return withLock((items) => {
+    if (identity.role === "merchant") {
+      const owner = items.find((i) => i.role === "merchant" && i.label.toLowerCase() === identity.label.toLowerCase());
+      if (owner && owner.nullifier !== identity.nullifier) {
+        throw new LabelTakenError(`${identity.label} is already registered to another merchant`);
+      }
+    }
     const now = new Date().toISOString();
-    const existing = items.find((i) => i.nullifier === identity.nullifier);
+    const existing = items.find((i) => i.nullifier === identity.nullifier && i.role === identity.role);
     if (existing) {
+      // A merchant moving to a different name starts over with a new certificate.
+      const keepCert = existing.role !== "merchant" || existing.label.toLowerCase() === identity.label.toLowerCase();
       Object.assign(existing, identity, { updatedAt: now });
+      if (!keepCert) {
+        delete existing.cert;
+        delete existing.shop;
+      }
       return { ...existing };
     }
     const row: VerifiedIdentity = { ...identity, verifiedAt: now, updatedAt: now };
@@ -89,7 +164,54 @@ export async function upsertIdentity(
   });
 }
 
-/** True when this merchant (by ENS name) has a verified merchant identity. */
-export function isVerifiedMerchant(ensName: string): boolean {
-  return readAll().some((i) => i.role === "merchant" && i.label.toLowerCase() === ensName.toLowerCase());
+export async function setMerchantCert(nullifier: string, cert: MerchantCert): Promise<VerifiedIdentity> {
+  return withLock((items) => {
+    const row = items.find((i) => i.nullifier === nullifier && i.role === "merchant");
+    if (!row) throw new Error("no merchant identity for this session");
+    row.cert = cert;
+    row.updatedAt = new Date().toISOString();
+    return { ...row };
+  });
+}
+
+export async function updateMerchantShop(nullifier: string, patch: Partial<MerchantShop>): Promise<VerifiedIdentity> {
+  return withLock((items) => {
+    const row = items.find((i) => i.nullifier === nullifier && i.role === "merchant");
+    if (!row) throw new Error("no merchant identity for this session");
+    row.shop = { ...(row.shop ?? { upiHandle: "", priceInrPaise: 0, endpoint: null }), ...patch };
+    for (const k of Object.keys(row.shop) as (keyof MerchantShop)[]) if (row.shop[k] === undefined) delete row.shop[k];
+    row.updatedAt = new Date().toISOString();
+    return { ...row };
+  });
+}
+
+export async function setBuyerWallet(nullifier: string, wallet: BuyerWallet): Promise<VerifiedIdentity> {
+  return withLock((items) => {
+    const row = items.find((i) => i.nullifier === nullifier && i.role === "user");
+    if (!row) throw new Error("no buyer identity for this session");
+    row.wallet = wallet;
+    row.updatedAt = new Date().toISOString();
+    return { ...row };
+  });
+}
+
+/** ENS names of merchants Sangam has provisioned, for the buyer directory. */
+export function listProvisionedMerchantNames(): string[] {
+  return readAll()
+    .filter((i) => i.role === "merchant" && i.shop?.provisionedAt)
+    .map((i) => i.label);
+}
+
+/** Merchants with their own deposit account, for the transfer watcher. */
+export function listDepositAccounts(): { ensName: string; accountId: string }[] {
+  return readAll()
+    .filter((i) => i.role === "merchant" && i.shop?.depositAccountId && i.shop.provisionedAt)
+    .map((i) => ({ ensName: i.label, accountId: i.shop!.depositAccountId! }));
+}
+
+/** Merchants anyone may see: the ENS name and badge only, no personal data. */
+export function listPublicMerchants() {
+  return readAll()
+    .filter((i) => i.role === "merchant")
+    .map((i) => ({ role: i.role, label: i.label, attestationId: i.attestationId, certified: !!i.cert, onEns: !!i.shop?.provisionedAt }));
 }
