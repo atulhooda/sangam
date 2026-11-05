@@ -68,7 +68,7 @@ export function CertForm({ me, replacing }: { me: Me; replacing: boolean }) {
       <main className="mx-auto max-w-xl space-y-5 px-5 py-8 sm:py-12">
         <div className="text-center">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">{replacing ? "Replace certificate" : "Step 2 of 2"}</p>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{replacing ? "Update your business details" : "Set up your shop"}</h1>
+          <h1 className="display mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">{replacing ? "Update your business details" : "Set up your shop"}</h1>
           <p className="mt-2 text-sm text-muted">
             Your identity is verified{" "}
             <span className={`rounded-md px-1.5 py-px text-[10px] font-semibold ${badge.cls}`}>{badge.label}</span>. Now show the business behind{" "}
@@ -128,7 +128,7 @@ export function CertForm({ me, replacing }: { me: Me; replacing: boolean }) {
             <button
               type="submit"
               disabled={busy}
-              className="w-full rounded-xl bg-accent px-6 py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#1a1917]"
+              className="w-full rounded-xl bg-accent px-6 py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0e0d13]"
             >
               {busy ? "Creating your Hedera account and ENS name…" : replacing ? "Save and update ENS →" : "Upload and set up my shop →"}
             </button>

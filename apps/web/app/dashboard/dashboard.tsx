@@ -154,7 +154,9 @@ function Kpis({ stats, settlements }: { stats: Stats | null; settlements: Settle
         <p className="mt-3 text-sm text-muted">
           {stats ? (
             <>
-              Across <span className="font-medium text-ink">{stats.paidCount}</span> UPI payout{stats.paidCount === 1 ? "" : "s"} to tickets@razorpay ·{" "}
+              Across <span className="font-medium text-ink">{stats.paidCount}</span> UPI payout{stats.paidCount === 1 ? "" : "s"} to{" "}
+              <span className="font-medium text-ink">{new Set((settlements ?? []).filter((x) => x.status === "paid").map((x) => x.merchant)).size || "—"}</span> merchant
+              {new Set((settlements ?? []).filter((x) => x.status === "paid").map((x) => x.merchant)).size === 1 ? "" : "s"} ·{" "}
               <span className="font-medium text-ink">50 bps</span> fee
             </>
           ) : (
@@ -197,12 +199,25 @@ function Kpis({ stats, settlements }: { stats: Stats | null; settlements: Settle
 type StepState = "done" | "active" | "warn" | "fail" | "todo" | "skipped";
 
 const STAGES = [
-  { title: "Received", who: "merchant-api notice", tag: null },
-  { title: "Verified", who: "Hedera Mirror Node", tag: "skipped · sim" },
-  { title: "Decided", who: "0G Compute", tag: "mock" },
-  { title: "Paid out", who: "UPI · RazorpayX", tag: "mock" },
-  { title: "Receipt", who: "Hedera Consensus Service", tag: "not set" },
+  { title: "Received", who: "merchant-api notice" },
+  { title: "Verified", who: "Hedera Mirror Node" },
+  { title: "Decided", who: "0G Compute" },
+  { title: "Paid out", who: "UPI · RazorpayX" },
+  { title: "Receipt", who: "Hedera Consensus Service" },
 ] as const;
+
+/** Per-payment tags: what was actually skipped or mocked for *this* payment, not the global settings. */
+function stageTags(s: Settlement, states: StepState[]): (string | null)[] {
+  const sim = isSimTx(s.hederaTxId);
+  const past = (i: number) => states[i] === "done" || states[i] === "warn" || states[i] === "fail";
+  return [
+    s.source === "transfer" ? "wallet transfer" : null,
+    sim ? "skipped · sim" : past(1) && !s.chainVerified ? "skipped" : null,
+    s.ogChatId?.startsWith("mock-") ? "mock" : null,
+    s.payoutMode === "mock" && s.status === "paid" ? "mock" : null,
+    states[4] === "skipped" ? (sim ? "not for sims" : s.status === "held" ? null : "not set") : null,
+  ];
+}
 
 function stageStates(s: Settlement): StepState[] {
   switch (s.status) {
@@ -229,18 +244,18 @@ function Node({ state, n }: { state: StepState; n: number }) {
   const base = "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-colors duration-300";
   switch (state) {
     case "done":
-      return <span className={`${base} bg-ok text-white dark:text-[#1a1917]`}>✓</span>;
+      return <span className={`${base} bg-ok text-white dark:text-[#0e0d13]`}>✓</span>;
     case "active":
       return (
-        <span className={`${base} bg-accent text-white dark:text-[#1a1917]`}>
+        <span className={`${base} bg-accent text-white dark:text-[#0e0d13]`}>
           <span className="absolute inset-0 animate-ping rounded-full bg-accent/40" />
           <Spinner className="relative h-4 w-4" />
         </span>
       );
     case "warn":
-      return <span className={`${base} bg-warn text-white dark:text-[#1a1917]`}>‖</span>;
+      return <span className={`${base} bg-warn text-white dark:text-[#0e0d13]`}>‖</span>;
     case "fail":
-      return <span className={`${base} bg-bad text-white dark:text-[#1a1917]`}>✕</span>;
+      return <span className={`${base} bg-bad text-white dark:text-[#0e0d13]`}>✕</span>;
     case "skipped":
       return <span className={`${base} border-2 border-dashed border-line text-muted`}>–</span>;
     default:
@@ -260,6 +275,7 @@ function Connector({ from, to, vertical = false }: { from: StepState; to: StepSt
 
 function Pipeline({ s }: { s: Settlement }) {
   const states = stageStates(s);
+  const tags = stageTags(s, states);
   return (
     <>
       {/* desktop: horizontal */}
@@ -276,7 +292,7 @@ function Pipeline({ s }: { s: Settlement }) {
             </span>
             <p className="mt-3 text-sm font-semibold">{st.title}</p>
             <p className="mt-0.5 text-[11px] text-muted">{st.who}</p>
-            {st.tag && (st.tag !== "not set" || states[i] === "skipped") && <span className="mt-2"><MockTag>{st.tag}</MockTag></span>}
+            {tags[i] && <span className="mt-2"><MockTag>{tags[i]}</MockTag></span>}
           </li>
         ))}
       </ol>
@@ -296,8 +312,8 @@ function Pipeline({ s }: { s: Settlement }) {
               <p className="text-sm font-semibold">{st.title}</p>
               <p className="text-[11px] text-muted">{st.who}</p>
             </div>
-            {st.tag && (st.tag !== "not set" || states[i] === "skipped") && (
-              <span className="ml-auto pt-2"><MockTag>{st.tag}</MockTag></span>
+            {tags[i] && (
+              <span className="ml-auto pt-2"><MockTag>{tags[i]}</MockTag></span>
             )}
           </li>
         ))}
@@ -440,6 +456,16 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
   const [busy, setBusy] = useState<"ok" | "short" | "agent" | "ondc" | "scam" | null>(null);
   const [agentMsg, setAgentMsg] = useState<{ ok: boolean; text: string; href?: string; refused?: boolean } | null>(null);
   const canSim = stats?.actions.simulate ?? false;
+  // Signed-in buyer with a connected wallet? The agent pays from it.
+  const [myWallet, setMyWallet] = useState<{ accountId: string; balanceAtomic: string | null; remainingAtomic: string } | null>(null);
+  useEffect(() => {
+    fetch("/api/buyer/wallet", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { wallet?: { accountId: string } | null; balanceAtomic?: string | null; remainingAtomic?: string } | null) =>
+        setMyWallet(j?.wallet ? { accountId: j.wallet.accountId, balanceAtomic: j.balanceAtomic ?? null, remainingAtomic: j.remainingAtomic ?? "0" } : null),
+      )
+      .catch(() => setMyWallet(null));
+  }, [busy]);
   const canPay = stats?.actions.payAsAgent ?? false;
 
   async function send(short: boolean) {
@@ -504,7 +530,19 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
     <Card>
       <CardHead title="Send a payment" hint="An agent pays tickets.sangam.eth. Watch it settle." />
       <div className="space-y-2.5 p-5">
-        {stats?.budget && (
+        <p className="rounded-xl bg-surface2 px-4 py-2.5 text-xs text-muted">
+          {myWallet ? (
+            <>
+              Pays from <span className="font-medium text-ink">your agent wallet</span> <span className="mono">{myWallet.accountId}</span>
+              {myWallet.balanceAtomic !== null && <> · {usdc(myWallet.balanceAtomic, 2)} USDC</>} · {usdc(myWallet.remainingAtomic, 2)} budget left
+            </>
+          ) : (
+            <>
+              Pays from Sangam's demo account. <a className="text-accent underline-offset-2 hover:underline" href="/buyer">Connect your own agent wallet</a> on the buyer desk to pay from it.
+            </>
+          )}
+        </p>
+        {!myWallet && stats?.budget && (
           <div className="rounded-xl border border-line bg-surface2 px-4 py-3" title="CUSTOMER_TOTAL_BUDGET: the agent's cumulative USDC cap">
             <div className="flex items-baseline justify-between gap-3 text-xs">
               <span className="text-muted">Agent budget left</span>
@@ -526,7 +564,7 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
           onClick={() => payAsAgent("ticket")}
           disabled={busy !== null || !canPay}
           title={canPay ? undefined : "Set CUSTOMER_ACCOUNT_ID and CUSTOMER_PRIVATE_KEY in .env"}
-          className="flex w-full items-center justify-between rounded-xl bg-accent px-4 py-3 text-left font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#1a1917]"
+          className="flex w-full items-center justify-between rounded-xl bg-accent px-4 py-3 text-left font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0e0d13]"
         >
           <span>
             Pay as agent
@@ -628,7 +666,7 @@ function InvoiceCard({ invoice }: { invoice: { decoded: Invoice; raw: string } |
               {raw ? "Hide" : "Show"} raw PAYMENT-REQUIRED header
             </button>
             {raw && (
-              <pre className="mono mt-2 max-h-32 overflow-auto break-all whitespace-pre-wrap rounded-lg bg-[#1a1917] p-3 text-[10.5px] text-[#ece9e2]">
+              <pre className="mono mt-2 max-h-32 overflow-auto break-all whitespace-pre-wrap rounded-lg bg-[#0e0d13] p-3 text-[10.5px] text-[#efeff4]">
                 {invoice!.raw}
               </pre>
             )}
@@ -898,7 +936,7 @@ export function Dashboard() {
       <main id="main" tabIndex={-1} className="mx-auto max-w-7xl space-y-5 px-5 py-6 outline-none sm:py-8">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Settlement desk</h1>
+            <h1 className="display text-2xl font-semibold tracking-tight sm:text-3xl">Settlement desk</h1>
             <p className="mt-1 text-sm text-muted">Every agent payment, from USDC in to rupees out.</p>
           </div>
         </div>

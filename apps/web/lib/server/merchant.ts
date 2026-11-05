@@ -24,9 +24,9 @@ export const ondcGatewayName = () => envOr("ONDC_GATEWAY_ENS", `ondc.${envOr("EN
 
 /**
  * After a paywalled response: if the facilitator settled a payment (the
- * PAYMENT-RESPONSE header), tell Sangam. Done here, not in the resource
- * server's onAfterSettle hook, because @x402/core 2.28 registers those hooks
- * but never runs them on the resource-server side.
+ * PAYMENT-RESPONSE header), tell Sangam, awaited, so the settlement row
+ * exists before the buyer gets its goods. One place for every paywall,
+ * instead of a separate onAfterSettle hook per resource server.
  */
 export async function notifyIfSettled(res: Response, merchant: string, tag = "merchant"): Promise<void> {
   const header = res.headers.get("PAYMENT-RESPONSE");
