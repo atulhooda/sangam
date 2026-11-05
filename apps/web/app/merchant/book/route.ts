@@ -3,7 +3,7 @@ import { withX402 } from "@x402/next";
 import { resolveMerchant } from "@sangam/ens";
 import { createMerchantServer } from "@sangam/hedera";
 import { formatUsdc, inrPerUsd, paiseToUsdcAtomic } from "@sangam/shared";
-import { bookTicket, merchantEnsName, notifySangam } from "@/lib/server/merchant";
+import { bookTicket, merchantEnsName, notifyIfSettled } from "@/lib/server/merchant";
 
 export const dynamic = "force-dynamic";
 
@@ -22,10 +22,8 @@ export const dynamic = "force-dynamic";
 
 const name = merchantEnsName();
 
-const server = createMerchantServer(async (paid) => {
-  console.log(`[merchant] settled ${paid.transaction} for ${formatUsdc(paid.amount)} USDC`);
-  await notifySangam({ merchant: name, hederaTxId: paid.transaction, payer: paid.payer, usdcAmount: paid.amount });
-});
+// Settlement notices are sent from GET below (see notifyIfSettled).
+const server = createMerchantServer(() => undefined);
 
 async function handler(req: NextRequest) {
   const q = req.nextUrl.searchParams;
@@ -52,6 +50,8 @@ const paid = withX402(
 
 export async function GET(req: NextRequest) {
   const res = await paid(req);
+  // Awaited so the settlement row exists by the time the buyer has its ticket.
+  await notifyIfSettled(res, name);
   // Let a page on another origin read the invoice and receipt headers.
   res.headers.set("access-control-allow-origin", "*");
   res.headers.set("access-control-expose-headers", "PAYMENT-REQUIRED, PAYMENT-RESPONSE");
