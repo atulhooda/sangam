@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { SelfAppBuilder, getUniversalLink } from "@selfxyz/qrcode";
 import type { SelfApp } from "@selfxyz/qrcode";
 import { SelfQRcodeWrapper } from "@selfxyz/qrcode/components/SelfQRcode";
@@ -8,11 +8,18 @@ import { Card, CardHead, LedgerRow, idBadge } from "../components/ui";
 import { ThemeToggle } from "../components/theme-toggle";
 
 /*
- * The merchant & user desk. A person proves who they are with the Self
- * offchain SDK: pick a role, scan the QR with the Self phone app, and the app
- * builds a zero-knowledge proof from their Aadhaar QR (attestation id 3) —
- * age over 18 and the fields we ask for are revealed; the Aadhaar number
- * itself never is. The proof is verified server-side at /api/self/verify.
+ * Sign-in, Sangam-style. Three screens:
+ *
+ *   1. login   — "Continue with Self". No passwords: your identity is a
+ *                zero-knowledge proof made by the Self phone app.
+ *   2. role    — Merchant or Buyer.
+ *   3. scan    — the Self QR. Aadhaar for Indians, a passport for everyone
+ *                else (all credentials accepted); only name + over-18 are
+ *                revealed, never a document number. On success you land on
+ *                your desk.
+ *
+ * Returning users are recognised by the identifier in this browser and sent
+ * straight to their desk from screen 1.
  *
  * Mock mode (SELF_MOCK, default true) uses Self's test documents, so this
  * works before any real deployment. For a real phone to reach the endpoint
@@ -21,33 +28,38 @@ import { ThemeToggle } from "../components/theme-toggle";
 
 const LOCALSTORAGE_KEY = "sangam.self.userId";
 
+type Role = "merchant" | "user";
+type Step = "login" | "role" | "scan";
+
 type Identity = {
   nullifier: string;
-  role: "merchant" | "user";
+  role: Role;
   label: string;
+  userId: string;
   attestationId: number;
   disclosed: Record<string, string>;
   verifiedAt: string;
 };
 
+const deskHref = (i: Pick<Identity, "role" | "label">) =>
+  i.role === "merchant" && i.label ? `/merchant/${encodeURIComponent(i.label)}` : "/buyer";
+
 export default function VerifyPage() {
-  const [role, setRole] = useState<"merchant" | "user">("merchant");
+  const [step, setStep] = useState<Step>("login");
+  const [role, setRole] = useState<Role>("merchant");
   const [label, setLabel] = useState("tickets.sangam.eth");
   const [selfApp, setSelfApp] = useState<SelfApp | null>(null);
   const [universalLink, setUniversalLink] = useState<string | null>(null);
-  const [verified, setVerified] = useState<{ name?: string; role: string; label: string } | null>(null);
+  const [verified, setVerified] = useState<{ role: Role; label: string } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [identities, setIdentities] = useState<Identity[] | null>(null);
+  const [returning, setReturning] = useState<Identity | null | undefined>(undefined); // undefined = checking
 
-  const loadIdentities = () => {
+  const loadIdentities = useCallback(() => {
     fetch("/api/self/identities", { cache: "no-store" })
       .then((r) => r.json() as Promise<Identity[]>)
       .then(setIdentities)
       .catch(() => setIdentities([]));
-  };
-
-  useEffect(() => {
-    loadIdentities();
   }, []);
 
   // One stable identifier per browser so repeat verifications map to the same person.
@@ -63,9 +75,26 @@ export default function VerifyPage() {
     }
   }, []);
 
+  useEffect(() => {
+    loadIdentities();
+  }, [loadIdentities]);
+
+  // Returning user? If this browser's identifier has a verified identity,
+  // screen 1 offers the desk directly.
+  useEffect(() => {
+    if (identities === null) return;
+    try {
+      const mine = localStorage.getItem(LOCALSTORAGE_KEY);
+      setReturning((mine && identities.find((i) => i.userId === mine)) || null);
+    } catch {
+      setReturning(null);
+    }
+  }, [identities]);
+
   // Rebuild the SelfApp whenever the role or label changes: the proof carries
   // both in its user context, so the backend can file the identity correctly.
   useEffect(() => {
+    if (step !== "scan") return;
     setFailed(null);
     setVerified(null);
     try {
@@ -78,7 +107,7 @@ export default function VerifyPage() {
         endpointType: "staging_https", // offchain: proofs verify at our endpoint
         userId,
         userIdType: "uuid",
-        userDefinedData: JSON.stringify({ role, label: label.trim() }),
+        userDefinedData: JSON.stringify({ role, label: role === "merchant" ? label.trim() : "" }),
         disclosures: { minimumAge: 18, name: true, date_of_birth: true },
       }).build();
       setSelfApp(app);
@@ -86,7 +115,7 @@ export default function VerifyPage() {
     } catch (err) {
       setFailed((err as Error).message);
     }
-  }, [role, label, userId]);
+  }, [step, role, label, userId]);
 
   const load = identities?.length ?? 0;
 
@@ -97,7 +126,7 @@ export default function VerifyPage() {
           <div className="flex items-center gap-3">
             <a href="/" className="text-lg font-bold tracking-tight text-accent">sangam</a>
             <span className="text-line">/</span>
-            <span className="text-sm font-medium">Identity desk</span>
+            <span className="text-sm font-medium">Sign in</span>
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
@@ -109,101 +138,184 @@ export default function VerifyPage() {
       </header>
 
       <main className="mx-auto max-w-5xl space-y-5 px-5 py-6 sm:py-8">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Who are you? Prove it with Aadhaar.</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
-            Merchants and users of Sangam's AI-agent payments verify once with the Self offchain SDK. The proof is
-            zero-knowledge: Sangam learns your name and that you're over 18 — never your Aadhaar number.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-          <Card>
-            <CardHead title="1 · Say who you are" hint="This travels inside the proof, signed." />
-            <div className="space-y-3 px-5 py-4">
-              <div className="grid grid-cols-2 gap-2">
-                {(["merchant", "user"] as const).map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => setRole(r)}
-                    className={`rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors ${
-                      role === r ? "border-accent bg-accentbg/60" : "border-line bg-surface hover:border-accent/50"
-                    }`}
-                  >
-                    {r === "merchant" ? "Merchant" : "User"}
-                    <span className="block text-xs font-normal text-muted">
-                      {r === "merchant" ? "I sell on Sangam / ONDC" : "I'm paying through an agent"}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <label className="block">
-                <span className="text-xs text-muted">{role === "merchant" ? "Merchant ENS name" : "A label for yourself"}</span>
-                <input
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
-                  className="mono mt-1 w-full rounded-lg border border-line bg-surface2 px-3 py-2 text-sm outline-none focus:border-accent"
-                  placeholder={role === "merchant" ? "myshop.sangam.eth" : "my name"}
-                />
-              </label>
-            </div>
-          </Card>
-
-          <Card>
-            <CardHead title="2 · Scan with the Self app" hint="The app proves your Aadhaar in zero knowledge." />
-            <div className="flex flex-col items-center gap-3 px-5 py-5">
-              {failed ? (
-                <p className="rounded-lg bg-badbg p-3 text-sm text-bad">{failed}</p>
-              ) : selfApp ? (
-                <SelfQRcodeWrapper
-                  selfApp={selfApp}
-                  onSuccess={() => {
-                    setVerified({ role, label: label.trim() });
-                    loadIdentities();
-                  }}
-                  onError={(data) => setFailed(`verification failed: ${data.reason ?? data.error_code ?? "unknown"}`)}
-                />
-              ) : (
-                <div className="flex h-64 w-64 animate-pulse items-center justify-center rounded-xl bg-surface2">
-                  <p className="text-sm text-muted">Loading QR…</p>
-                </div>
-              )}
-              {universalLink && (
-                <a className="text-xs text-accent underline-offset-2 hover:underline" href={universalLink} target="_blank" rel="noreferrer">
-                  or open on this phone ↗
+        {/* ── screen 1: login ── */}
+        {step === "login" && (
+          <div className="mx-auto max-w-md py-10 text-center sm:py-16">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent mx-auto text-3xl font-bold text-white dark:text-[#1a1917]">सं</div>
+            <h1 className="mt-6 text-3xl font-bold tracking-tight">Sign in to Sangam</h1>
+            <p className="mt-2 text-sm text-muted">
+              No passwords, no wallet. One zero-knowledge proof from your phone — an Aadhaar in India, a passport
+              anywhere else. Sangam learns your name and that you're over 18; nothing else about you leaves your
+              device.
+            </p>
+            <button
+              onClick={() => setStep("role")}
+              disabled={returning === undefined}
+              className="mt-8 w-full rounded-xl bg-accent px-6 py-4 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#1a1917]"
+            >
+              {returning === undefined ? "Checking…" : "Continue with Self →"}
+            </button>
+            {returning && (
+              <div className="mt-4 rounded-xl border border-line bg-surface p-4 text-sm" role="status">
+                <span className="inline-flex items-center gap-1.5 font-medium">
+                  Welcome back
+                  <span className={`rounded-md px-1.5 py-px text-[10px] font-semibold ${idBadge(returning.attestationId).cls}`}>{idBadge(returning.attestationId).label}</span>
+                </span>
+                <p className="mt-1 text-xs text-muted">
+                  You're registered as {returning.role === "merchant" ? "a merchant" : "a buyer"}
+                  {returning.label ? ` — ${returning.label}` : ""}.
+                </p>
+                <a
+                  className="mt-3 inline-block rounded-lg bg-ok px-4 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 dark:text-[#1a1917]"
+                  href={deskHref(returning)}
+                >
+                  Go to your {returning.role === "merchant" ? "merchant desk" : "buyer desk"} →
                 </a>
-              )}
-              {verified && (
-                <div className="rounded-lg bg-okbg p-3 text-center text-sm text-ok" role="status">
-                  ✓ Registered as {verified.role} {verified.label && `“${verified.label}”`}
-                  <div className="mt-2">
-                    <a
-                      className="inline-block rounded-lg bg-ok px-4 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 dark:text-[#1a1917]"
-                      href={verified.role === "merchant" && verified.label ? `/merchant/${encodeURIComponent(verified.label)}` : "/buyer"}
-                    >
-                      Go to your {verified.role === "merchant" ? "merchant desk" : "buyer desk"} →
-                    </a>
-                  </div>
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
+              </div>
+            )}
+            <p className="mt-6 text-xs text-muted">
+              By continuing you prove your identity with the Self offchain SDK — the proof is verified at
+              <span className="mono"> /api/self/verify</span> and only the disclosed fields are stored.
+            </p>
+          </div>
+        )}
 
-        <Card>
-          <CardHead title="Verified identities" hint="Only what the proofs disclosed — no document numbers, ever." right={<span className="text-xs text-muted">{load} verified</span>} />
+        {/* ── screen 2: who are you ── */}
+        {step === "role" && (
+          <div className="mx-auto max-w-2xl py-6 text-center sm:py-10">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Step 1 of 2</p>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">How are you using Sangam?</h1>
+            <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <button
+                onClick={() => {
+                  setRole("merchant");
+                  setStep("scan");
+                }}
+                className="group rounded-2xl border border-line bg-surface p-6 text-left transition-colors hover:border-accent"
+              >
+                <span aria-hidden className="text-3xl">🏪</span>
+                <p className="mt-3 text-lg font-semibold">I'm a merchant</p>
+                <p className="mt-1 text-sm text-muted">I sell on Sangam or ONDC. Agents pay me in USDC, I get rupees over UPI.</p>
+                <p className="mt-3 text-xs font-medium text-accent opacity-0 transition-opacity group-hover:opacity-100">Continue →</p>
+              </button>
+              <button
+                onClick={() => {
+                  setRole("user");
+                  setStep("scan");
+                }}
+                className="group rounded-2xl border border-line bg-surface p-6 text-left transition-colors hover:border-accent"
+              >
+                <span aria-hidden className="text-3xl">🤖</span>
+                <p className="mt-3 text-lg font-semibold">I'm a buyer</p>
+                <p className="mt-1 text-sm text-muted">My AI agent buys for me — tickets, ONDC goods — with USDC, no approval steps.</p>
+                <p className="mt-3 text-xs font-medium text-accent opacity-0 transition-opacity group-hover:opacity-100">Continue →</p>
+              </button>
+            </div>
+            <button onClick={() => setStep("login")} className="mt-8 text-sm text-muted underline-offset-2 hover:text-ink hover:underline">
+              ← Back
+            </button>
+          </div>
+        )}
+
+        {/* ── screen 3: the Self QR ── */}
+        {step === "scan" && (
+          <div className="mx-auto max-w-2xl space-y-5 py-2 sm:py-6">
+            <div className="text-center">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Step 2 of 2</p>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
+                {role === "merchant" ? "Verify your identity to open your merchant desk" : "Verify your identity to open your buyer desk"}
+              </h1>
+              <p className="mt-2 text-sm text-muted">Scan with the Self app. {role === "merchant" ? "Aadhaar (India) or a passport anywhere else." : "Aadhaar (India) or a passport anywhere else."}</p>
+            </div>
+
+            <Card>
+              <CardHead
+                title={role === "merchant" ? "Your merchant name" : "Ready to scan"}
+                hint={role === "merchant" ? "The ENS name agents will pay. It travels inside the proof, signed." : "No details needed — the QR is tied to this browser."}
+              />
+              <div className="px-5 py-4">
+                {role === "merchant" && (
+                  <label className="block">
+                    <span className="text-xs text-muted">Merchant ENS name</span>
+                    <input
+                      value={label}
+                      onChange={(e) => setLabel(e.target.value)}
+                      className="mono mt-1 w-full rounded-lg border border-line bg-surface2 px-3 py-2 text-sm outline-none focus:border-accent"
+                      placeholder="myshop.sangam.eth"
+                    />
+                  </label>
+                )}
+              </div>
+            </Card>
+
+            <Card>
+              <CardHead title="Scan with the Self app" hint="The app builds the proof on your phone." />
+              <div className="flex flex-col items-center gap-3 px-5 py-5">
+                {failed ? (
+                  <>
+                    <p className="rounded-lg bg-badbg p-3 text-sm text-bad">{failed}</p>
+                    <button onClick={() => setFailed(null)} className="text-xs text-accent underline-offset-2 hover:underline">
+                      Try again
+                    </button>
+                  </>
+                ) : selfApp ? (
+                  <SelfQRcodeWrapper
+                    selfApp={selfApp}
+                    onSuccess={() => {
+                      setVerified({ role, label: role === "merchant" ? label.trim() : "" });
+                      loadIdentities();
+                    }}
+                    onError={(data) => setFailed(`verification failed: ${data.reason ?? data.error_code ?? "unknown"}`)}
+                  />
+                ) : (
+                  <div className="flex h-64 w-64 animate-pulse items-center justify-center rounded-xl bg-surface2">
+                    <p className="text-sm text-muted">Loading QR…</p>
+                  </div>
+                )}
+                {universalLink && !verified && (
+                  <a className="text-xs text-accent underline-offset-2 hover:underline" href={universalLink} target="_blank" rel="noreferrer">
+                    or open on this phone ↗
+                  </a>
+                )}
+                {verified && (
+                  <div className="rounded-lg bg-okbg p-3 text-center text-sm text-ok" role="status">
+                    ✓ Registered as {verified.role === "merchant" ? "a merchant" : "a buyer"}
+                    {verified.label ? ` — ${verified.label}` : ""}
+                    <div className="mt-2">
+                      <a
+                        className="inline-block rounded-lg bg-ok px-4 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 dark:text-[#1a1917]"
+                        href={deskHref(verified)}
+                      >
+                        Go to your {verified.role === "merchant" ? "merchant desk" : "buyer desk"} →
+                      </a>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+
+            <div className="text-center">
+              <button onClick={() => setStep("role")} className="text-sm text-muted underline-offset-2 hover:text-ink hover:underline">
+                ← I'm not a {role === "merchant" ? "merchant" : "buyer"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <Card className="mx-auto max-w-5xl">
+          <CardHead title="Registered identities" hint="Only what the proofs disclosed — no document numbers, ever." right={<span className="text-xs text-muted">{load} registered</span>} />
           <div className="px-5 py-3">
             {identities === null ? (
               <p className="py-4 text-sm text-muted">Loading…</p>
             ) : identities.length === 0 ? (
-              <p className="py-4 text-sm text-muted">No one has verified yet. Scan the QR above to be the first.</p>
+              <p className="py-4 text-sm text-muted">No one has registered yet. Continue with Self above to be the first.</p>
             ) : (
               <div className="rounded-lg bg-surface2 px-3 py-1">
                 {identities.map((i) => (
                   <LedgerRow
                     key={i.nullifier}
                     k={
-                      <a className="hover:underline" href={i.role === "merchant" && i.label ? `/merchant/${encodeURIComponent(i.label)}` : "/buyer"}>
+                      <a className="hover:underline" href={deskHref(i)}>
                         {i.role === "merchant" ? "Merchant" : "User"}{i.label ? ` · ${i.label}` : ""} ↗
                       </a>
                     }
