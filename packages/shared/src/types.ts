@@ -38,6 +38,14 @@ export type Settlement = {
   hcsTopicId?: string | null;
   /** The price this order was quoted at, when it isn't the merchant's fixed price (ONDC). */
   quotedInrPaise?: number | null;
+  /** Scheduled USDC refund back to the payer, created when the payment is held. */
+  refund?: {
+    scheduleId: string;
+    transactionId: string;
+    amountAtomic: string;
+    payer: string;
+    createdAt: string;
+  } | null;
   /** Set when the payment bought an order on ONDC. */
   ondc?: OndcOrderInfo | null;
   status: SettlementStatus;
@@ -86,6 +94,8 @@ export type Stats = {
   mocks: { chainVerify: boolean; og: boolean; psp: boolean; ens: boolean; hcs: boolean };
   /** Whether the dashboard's buttons can run. */
   actions: { simulate: boolean; payAsAgent: boolean };
+  /** The buyer agent's cumulative budget, or null when CUSTOMER_TOTAL_BUDGET is unset. */
+  budget?: { limitAtomic: string; spentAtomic: string; remainingAtomic: string } | null;
 };
 
 export type Quote = {
