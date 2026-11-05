@@ -1,8 +1,10 @@
 import { resolveMerchant } from "@sangam/ens";
 import { createPayingFetch, hashscanTxUrl } from "@sangam/hedera";
+import { assertBudgetAllows, BudgetExceededError, budgetSnapshot, recordBudgetSpend } from "@/lib/server/budget";
 import { merchantEnsName } from "@/lib/server/merchant";
 import { canPayAsAgent } from "@/lib/server/pipeline";
 import { findByTx } from "@/lib/server/store";
+import type { Invoice } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -42,12 +44,22 @@ export async function POST(req: Request) {
   }
 
   try {
+    // Enforce the cumulative budget before signing anything: probe the 402 for
+    // the price, then refuse if it wouldn't fit in what's left.
+    const probe = await fetch(url, { cache: "no-store" });
+    const probeHeader = probe.headers.get("PAYMENT-REQUIRED");
+    if (probe.status !== 402 || !probeHeader) throw new Error(`expected 402 from merchant, got ${probe.status}`);
+    const priceAtomic = (JSON.parse(atob(probeHeader)) as Invoice).accepts[0]?.amount;
+    if (!priceAtomic) throw new Error("merchant returned no payment options");
+    await assertBudgetAllows(BigInt(priceAtomic));
+
     const { buy } = createPayingFetch();
     const purchase = await buy<Record<string, unknown>>(url);
     if (purchase.status >= 400 || !purchase.settle?.success) {
       return Response.json({ error: `merchant answered ${purchase.status}`, detail: purchase.body }, { status: 502 });
     }
     const tx = purchase.settle.transaction;
+    await recordBudgetSpend(tx, purchase.price);
     return Response.json({
       kind: body.kind ?? "ticket",
       bought: what,
@@ -56,9 +68,21 @@ export async function POST(req: Request) {
       hederaTxId: tx,
       hashscan: hashscanTxUrl(tx),
       priceAtomic: purchase.price,
+      budget: await budgetSnapshot(),
       settlement: findByTx(tx) ?? null,
     });
   } catch (err) {
+    if (err instanceof BudgetExceededError) {
+      return Response.json(
+        {
+          error: `${err.message}. Top up CUSTOMER_TOTAL_BUDGET or raise it in .env.`,
+          spentAtomic: err.spentAtomic,
+          limitAtomic: err.limitAtomic,
+          remainingAtomic: err.remainingAtomic,
+        },
+        { status: 429 },
+      );
+    }
     return Response.json({ error: (err as Error).message }, { status: 502 });
   }
 }
