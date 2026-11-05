@@ -1,31 +1,41 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { EnsView, Settlement } from "@/lib/types";
+import type { EnsView, Me, Settlement } from "@/lib/types";
 import { Card, CardHead, LedgerRow, MockTag, Spinner, StatusPill, idBadge } from "../../components/ui";
 import { ThemeToggle } from "../../components/theme-toggle";
+import { AccountMenu } from "../../components/account-menu";
 import { clock, hashscanTopic, hashscanTx, isSimTx, rupees, timeAgo, usdc } from "../../dashboard/format";
 
 /*
  * The merchant desk: everything this merchant cares about, and nothing else.
- * No login — the ENS name is the account, and the padlock is the Self proof:
- * registration is a zero-knowledge Aadhaar (or passport) verification at
- * /verify; until it's done, the desk shows the banner instead of the money.
+ * page.tsx lets in only the merchant who proved this ENS name with Self and
+ * has a company certificate on file; buyers and other merchants are sent away
+ * on the server, before this renders.
  */
 
-type Identity = {
-  nullifier: string;
-  role: "merchant" | "user";
-  label: string;
-  attestationId: number;
-  disclosed: Record<string, string>;
-  verifiedAt: string;
-};
+export function MerchantDesk({ name, me: initialMe }: { name: string; me: Me }) {
+  const [me, setMe] = useState(initialMe);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
-export function MerchantDesk({ name }: { name: string }) {
+  async function retrySetup() {
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      const res = await fetch("/api/merchant/provision", { method: "POST" });
+      const body = (await res.json()) as { me?: Me; error?: string };
+      if (body.me) setMe(body.me);
+      if (!res.ok && body.error) setRetryError(body.error);
+    } catch (err) {
+      setRetryError((err as Error).message);
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   const [settlements, setSettlements] = useState<Settlement[] | null>(null);
   const [ens, setEns] = useState<EnsView | { error: string } | null>(null);
-  const [identity, setIdentity] = useState<Identity | null | undefined>(undefined); // undefined = loading
   const [error, setError] = useState(false);
 
   useEffect(() => {
@@ -45,10 +55,6 @@ export function MerchantDesk({ name }: { name: string }) {
       .then((r) => r.json() as Promise<EnsView>)
       .then(setEns)
       .catch(() => setEns({ error: "Could not load ENS records" }));
-    fetch("/api/self/identities", { cache: "no-store" })
-      .then((r) => r.json() as Promise<Identity[]>)
-      .then((rows) => setIdentity(rows.find((i) => i.role === "merchant" && i.label.toLowerCase() === name.toLowerCase()) ?? null))
-      .catch(() => setIdentity(null));
     tick();
     const t = setInterval(tick, 3000);
     return () => {
@@ -62,7 +68,7 @@ export function MerchantDesk({ name }: { name: string }) {
   const usdcIn = rows.reduce((sum, s) => sum + BigInt(s.usdcAmount), 0n);
   const inrPaid = paid.reduce((sum, s) => sum + (s.payoutPaise ?? 0), 0);
   const view = ens && !("error" in ens) ? ens : null;
-  const badge = identity ? idBadge(identity.attestationId) : null;
+  const badge = idBadge(me.attestationId);
 
   return (
     <div className="min-h-screen">
@@ -75,12 +81,10 @@ export function MerchantDesk({ name }: { name: string }) {
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
-            <a href="/verify" className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent hover:text-ink">
-              Identity desk
-            </a>
             <a href="/dashboard" className="hidden rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent hover:text-ink sm:block">
               Settlement desk →
             </a>
+            <AccountMenu me={me} />
           </div>
         </div>
       </header>
@@ -91,26 +95,10 @@ export function MerchantDesk({ name }: { name: string }) {
             <h1 className="mono text-xl font-bold tracking-tight text-accent sm:text-2xl">{name}</h1>
             <p className="mt-1 text-sm text-muted">Your settlements: agents pay USDC, you get rupees.</p>
           </div>
-          {identity === undefined ? (
-            <Spinner className="h-4 w-4 text-muted" />
-          ) : badge && identity ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-okbg px-3 py-1 text-xs font-medium text-ok" title={`Verified via Self${identity.disclosed.name ? ` — ${identity.disclosed.name}` : ""}`}>
-              {badge.label} registered
-            </span>
-          ) : null}
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-okbg px-3 py-1 text-xs font-medium text-ok" title={`Verified via Self${me.name ? ` — ${me.name}` : ""}`}>
+            {badge.label} verified · certificate on file
+          </span>
         </div>
-
-        {identity === null && (
-          <div className="flex flex-col gap-3 rounded-2xl border border-warn/30 bg-warnbg/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm">
-              <span className="font-semibold">Not registered yet.</span>{" "}
-              <span className="text-muted">Verify with your Aadhaar (or passport, if you're outside India) to open this desk — it takes a minute and reveals nothing about your ID.</span>
-            </p>
-            <a href="/verify" className="shrink-0 rounded-lg bg-accent px-4 py-2 text-center text-sm font-medium text-white transition-opacity hover:opacity-90 dark:text-[#1a1917]">
-              Register with Self →
-            </a>
-          </div>
-        )}
 
         {error && <p className="rounded-xl bg-badbg p-4 text-sm text-bad">API unreachable — is the app running?</p>}
 
@@ -190,6 +178,90 @@ export function MerchantDesk({ name }: { name: string }) {
             </div>
           )}
         </Card>
+
+        {me.shop && (
+          <Card>
+            <CardHead
+              title="Your name and deposit account"
+              hint="Set up by Sangam after your certificate. Agents read these from ENS."
+              right={
+                me.shop.provisionedAt ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-okbg px-2 py-0.5 text-[11px] font-medium text-ok">
+                    <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-ok" /> verified on ENS
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-warnbg px-2 py-0.5 text-[11px] font-medium text-warn">not set up yet</span>
+                )
+              }
+            />
+            <div className="m-5 mt-4 rounded-lg bg-surface2 px-3 py-1">
+              <LedgerRow
+                k="Deposit account"
+                v={
+                  me.shop.depositAccountId ? (
+                    <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={`https://hashscan.io/testnet/account/${me.shop.depositAccountId}`} target="_blank" rel="noreferrer">
+                      {me.shop.depositAccountId} ↗
+                    </a>
+                  ) : (
+                    <span className="text-xs text-muted">—</span>
+                  )
+                }
+              />
+              <LedgerRow k="UPI payouts" v={<span className="mono text-xs">{me.shop.upiHandle}</span>} />
+              <LedgerRow k="Price per order" v={<span className="text-xs">{rupees(me.shop.priceInrPaise)}</span>} />
+              <LedgerRow k="Agents buy at" v={<span className="mono block max-w-[260px] truncate text-[11px]" title={me.shop.publishedUrl ?? ""}>{me.shop.publishedUrl ?? "—"}</span>} />
+              {me.shop.ensTxs.map((t) => (
+                <LedgerRow
+                  key={t.tx}
+                  k={`ENS ${t.step}`}
+                  v={
+                    <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={`https://sepolia.etherscan.io/tx/${t.tx}`} target="_blank" rel="noreferrer">
+                      {t.tx.slice(0, 12)}… ↗
+                    </a>
+                  }
+                />
+              ))}
+            </div>
+            {!me.shop.provisionedAt && (
+              <div className="flex flex-col gap-2 px-5 pb-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-bad">{retryError ?? me.shop.error ?? "Setup hasn't finished."} Agents can't pay you until it does.</p>
+                <button
+                  onClick={retrySetup}
+                  disabled={retrying}
+                  className="shrink-0 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#1a1917]"
+                >
+                  {retrying ? "Setting up… (up to a minute)" : "Retry setup"}
+                </button>
+              </div>
+            )}
+          </Card>
+        )}
+
+        {me.cert && (
+          <Card>
+            <CardHead
+              title="Company certificate"
+              hint="Only you can open this file. Uploaded after your Self sign-in."
+              right={<span className="rounded-full bg-warnbg px-2 py-0.5 text-[11px] font-medium text-warn">submitted · awaiting review</span>}
+            />
+            <div className="m-5 mt-4 rounded-lg bg-surface2 px-3 py-1">
+              <LedgerRow k="Company" v={<span className="text-xs">{me.cert.companyName}</span>} />
+              <LedgerRow k="Registration no." v={<span className="mono text-xs">{me.cert.registrationNumber}</span>} />
+              <LedgerRow
+                k="File"
+                v={
+                  <a className="text-xs text-accent underline-offset-2 hover:underline" href="/api/merchant/cert" target="_blank" rel="noreferrer">
+                    {me.cert.fileName} ↗
+                  </a>
+                }
+              />
+              <LedgerRow k="Uploaded" v={<span className="text-xs">{timeAgo(me.cert.uploadedAt, Date.now())}</span>} />
+            </div>
+            <p className="px-5 pb-4 text-xs text-muted">
+              Wrong file or details? <a className="text-accent underline-offset-2 hover:underline" href="/merchant/onboarding?replace=1">Update them</a>.
+            </p>
+          </Card>
+        )}
 
         {view && (
           <Card>
