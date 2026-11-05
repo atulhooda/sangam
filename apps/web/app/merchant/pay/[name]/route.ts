@@ -4,7 +4,7 @@ import { withX402 } from "@x402/next";
 import { resolveMerchant } from "@sangam/ens";
 import { createMerchantServer } from "@sangam/hedera";
 import { formatUsdc, inrPerUsd, paiseToUsdcAtomic } from "@sangam/shared";
-import { notifySangam } from "@/lib/server/merchant";
+import { notifyIfSettled } from "@/lib/server/merchant";
 
 export const dynamic = "force-dynamic";
 
@@ -22,9 +22,8 @@ const paywalls = (g.__sangamPaywalls ??= new Map());
 function paywallFor(ensName: string): Paywall {
   let p = paywalls.get(ensName);
   if (p) return p;
-  const server = createMerchantServer(async (paid) => {
-    await notifySangam({ merchant: ensName, hederaTxId: paid.transaction, payer: paid.payer, usdcAmount: paid.amount }, "pay-link");
-  });
+  // Notices are sent from GET (see notifyIfSettled).
+  const server = createMerchantServer(() => undefined);
   p = withX402(
     async () => {
       const rec = await resolveMerchant(ensName);
@@ -59,6 +58,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ name: strin
     return NextResponse.json({ error: `${ensName} is not a Sangam merchant: ${(err as Error).message.split("\n")[0]}` }, { status: 404 });
   }
   const res = await paywallFor(ensName)(req);
+  await notifyIfSettled(res, ensName, "pay-link");
   res.headers.set("access-control-allow-origin", "*");
   res.headers.set("access-control-expose-headers", "PAYMENT-REQUIRED, PAYMENT-RESPONSE");
   return res;

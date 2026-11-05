@@ -1,5 +1,6 @@
 import "server-only";
 import { randomInt } from "node:crypto";
+import { decodePaymentResponseHeader } from "@x402/core/http";
 import { env, envOr, type SettlementNotice } from "@sangam/shared";
 
 /*
@@ -20,6 +21,22 @@ export const sangamApiUrl = () => envOr("SANGAM_API_URL", "http://localhost:5173
  * treasury as sangam.payTo. Buyer agents verify it like any other merchant.
  */
 export const ondcGatewayName = () => envOr("ONDC_GATEWAY_ENS", `ondc.${envOr("ENS_PARENT_NAME", "sangam.eth")}`);
+
+/**
+ * After a paywalled response: if the facilitator settled a payment (the
+ * PAYMENT-RESPONSE header), tell Sangam. Done here, not in the resource
+ * server's onAfterSettle hook, because @x402/core 2.28 registers those hooks
+ * but never runs them on the resource-server side.
+ */
+export async function notifyIfSettled(res: Response, merchant: string, tag = "merchant"): Promise<void> {
+  const header = res.headers.get("PAYMENT-RESPONSE");
+  if (res.status >= 400 || !header) return;
+  const settle = decodePaymentResponseHeader(header);
+  if (!settle.success || !settle.transaction) return;
+  console.log(`[${tag}] ${merchant} settled ${settle.transaction}`);
+  // amount may be absent: Sangam's chain check records what actually landed.
+  await notifySangam({ merchant, hederaTxId: settle.transaction, payer: settle.payer, usdcAmount: settle.amount ?? "0" }, tag);
+}
 
 /**
  * Tell Sangam a payment settled (POST /api/settlements). Awaited so the
