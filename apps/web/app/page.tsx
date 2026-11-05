@@ -1,5 +1,6 @@
 import { Backdrop } from "./components/backdrop";
 import { ThemeToggle } from "./components/theme-toggle";
+import { AccountMenu } from "./components/account-menu";
 import { TwoWorlds } from "./components/two-worlds";
 import { FiveSteps } from "./components/five-steps";
 import { FourDepartments } from "./components/four-departments";
@@ -27,12 +28,7 @@ export default function Home() {
           <a href="#how" className="hidden text-muted hover:text-ink sm:block">How it works</a>
           <a href="#what" className="hidden text-muted hover:text-ink sm:block">What it is</a>
           <ThemeToggle />
-          <a
-            href="/verify"
-            className="rounded-lg border border-line bg-surface px-4 py-2 font-medium transition-colors hover:border-accent"
-          >
-            Sign in
-          </a>
+          <AccountMenu />
           <a
             href="/dashboard"
             className="rounded-lg bg-accent px-4 py-2 font-medium text-white transition-opacity hover:opacity-90"
