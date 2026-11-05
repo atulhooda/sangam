@@ -8,11 +8,8 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "merchant": "npm --workspace @sangam/merchant-api start",
-    "settlement": "npm --workspace @sangam/settlement-agent start",
-    "settlement:sim": "npm --workspace @sangam/settlement-agent run start:sim",
-    "buy": "npm --workspace @sangam/customer-agent start --",
-    "dashboard": "npm --workspace @sangam/dashboard run dev",
+    "web": "npm --workspace @sangam/web run dev",
+    "web:build": "npm --workspace @sangam/web run build",
     "gen-keys": "tsx scripts/gen-keys.ts",
     "setup-hedera": "tsx scripts/setup-hedera.ts",
     "create-topic": "tsx scripts/create-hcs-topic.ts",
@@ -21,7 +18,6 @@
     "simulate": "tsx scripts/simulate-settlement.ts"
   },
   "devDependencies": {
-    "@types/express": "^5.0.0",
     "@types/node": "^22.10.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
