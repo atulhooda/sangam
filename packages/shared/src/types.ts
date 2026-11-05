@@ -96,6 +96,8 @@ export type Stats = {
   actions: { simulate: boolean; payAsAgent: boolean };
   /** The buyer agent's cumulative budget, or null when CUSTOMER_TOTAL_BUDGET is unset. */
   budget?: { limitAtomic: string; spentAtomic: string; remainingAtomic: string } | null;
+  /** The buyer agent's Hedera account (CUSTOMER_ACCOUNT_ID), when set. */
+  customerAccountId?: string | null;
 };
 
 export type Quote = {
