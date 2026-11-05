@@ -2,9 +2,9 @@ import "server-only";
 import { existsSync, readFileSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { REPO_ROOT, envOr } from "@sangam/shared";
+import { DATA_DIR, envOr } from "@sangam/shared";
 
-const FILE = path.join(REPO_ROOT, "data/agent-budget.local.json");
+const FILE = path.join(DATA_DIR, "agent-budget.local.json");
 
 /*
  * The buyer agent's cumulative spending budget (CUSTOMER_TOTAL_BUDGET, in

@@ -2,9 +2,9 @@ import "server-only";
 import { existsSync, readFileSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { REPO_ROOT } from "@sangam/shared";
+import { DATA_DIR } from "@sangam/shared";
 
-const FILE = path.join(REPO_ROOT, "data/identities.local.json");
+const FILE = path.join(DATA_DIR, "identities.local.json");
 
 /*
  * Verified identities (merchants and users), proved with the Self offchain

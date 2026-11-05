@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { REPO_ROOT } from "@sangam/shared";
+import { DATA_DIR } from "@sangam/shared";
 import { mirrorNodeUrl } from "./client.ts";
 
 /*
@@ -16,7 +16,7 @@ import { mirrorNodeUrl } from "./client.ts";
 
 export type ChainHead = { topicId: string; seq: number; hash: string } | null;
 
-const CHAIN_FILE = path.join(REPO_ROOT, "data/hcs-chain.local.json");
+const CHAIN_FILE = path.join(DATA_DIR, "hcs-chain.local.json");
 
 /** Deterministic JSON: object keys sorted recursively, so hashing is stable. */
 export function canonicalJson(value: unknown): string {
