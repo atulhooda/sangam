@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { resolveMerchant } from "@sangam/ens";
+import { resolveMerchant, assertVerifiedPayee } from "@sangam/ens";
 import { createPayingFetch, hashscanTxUrl } from "@sangam/hedera";
 import { envOr, formatUsdc, type Settlement } from "@sangam/shared";
 import { z } from "zod";
@@ -70,7 +70,7 @@ server.registerTool(
   {
     title: "Buy with USDC on Hedera",
     description:
-      "Buy at an x402 URL: the merchant answers 402, the agent signs a USDC transfer on Hedera and retries — no approval step. Needs CUSTOMER_ACCOUNT_ID and CUSTOMER_PRIVATE_KEY in .env. Returns the Hedera transaction id, the HashScan link and the price paid.",
+      "Buy at an x402 URL: the merchant answers 402, the agent signs a USDC transfer on Hedera and retries — no approval step. Only verified Sangam merchants get paid: the invoice must name a .sangam.eth merchant whose ENS record says sangam.status=verified and whose sangam.payTo matches the invoice, otherwise nothing is signed. Needs CUSTOMER_ACCOUNT_ID and CUSTOMER_PRIVATE_KEY in .env. Returns the Hedera transaction id, the HashScan link and the price paid.",
     inputSchema: {
       url: z.string().describe("the x402 URL to buy (an orderUrl from search_catalog, or a merchant endpoint)"),
       qty: z.number().int().positive().optional().describe("quantity, for ONDC order URLs (default 1)"),
@@ -80,7 +80,7 @@ server.registerTool(
     try {
       const target = new URL(url);
       if (qty) target.searchParams.set("qty", String(qty));
-      const { buy } = createPayingFetch();
+      const { buy } = createPayingFetch({ guard: assertVerifiedPayee });
       const purchase = await buy<Record<string, unknown>>(target);
       if (!purchase.settle?.success) {
         throw new Error(`purchase did not settle (HTTP ${purchase.status}): ${JSON.stringify(purchase.body)}`);

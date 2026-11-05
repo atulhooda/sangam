@@ -8,6 +8,12 @@ export type MerchantRecord = {
   network: string;
   upiHandle: string;
   priceInrPaise: number;
+  /**
+   * sangam.status: "verified" once Sangam has checked the merchant (Self proof
+   * + company certificate); "suspended" to stop agents paying it. Missing on
+   * names issued before verification existed: agents treat those as unverified.
+   */
+  status?: string;
 };
 
 export type SettlementStatus = "received" | "confirmed" | "decided" | "paid" | "held" | "failed";
@@ -15,6 +21,8 @@ export type SettlementStatus = "received" | "confirmed" | "decided" | "paid" | "
 export type PayoutMode = "mock" | "razorpayx-test";
 
 export type Settlement = {
+  /** How Sangam learned of the payment: the merchant's x402 notice, or USDC seen landing in its deposit account. */
+  source?: "x402" | "transfer";
   id: string;
   merchant: string;
   hederaTxId: string;
@@ -63,6 +71,8 @@ export type SettlementNotice = {
   /** Per-order quote (ONDC); falls back to the merchant's ENS price. */
   quotedInrPaise?: number;
   ondc?: OndcOrderInfo;
+  /** "x402" (the merchant's notice, the default) or "transfer" (Sangam saw USDC land in the merchant's deposit account). */
+  source?: "x402" | "transfer";
 };
 
 /** The ONDC side of a settlement: which seller, which order, where the rupees go. */
