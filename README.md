@@ -121,7 +121,7 @@ Every settlement receipt on HCS carries `prev`: the sequence number and sha256 o
 
 Merchants and users verify once at **/verify**: pick your role, scan the QR with the [Self app](https://self.xyz), and the app builds a zero-knowledge proof from your Aadhaar QR (attestation id 3; passports and EU ID cards also work). Sangam's backend (`/api/self/verify`, the `SelfBackendVerifier` from `@selfxyz/core`) checks the proof and learns only what was disclosed — your name and that you're over 18. The Aadhaar number itself never leaves your phone; the proof's nullifier (one per person, per app) is the only id we store.
 
-`SELF_MOCK=true` (default) uses Self's test documents while building. For real proofs the endpoint must be publicly reachable (deploy, or a tunnel), set `NEXT_PUBLIC_SELF_ENDPOINT` accordingly, and set `SELF_MOCK=false`.
+`NEXT_PUBLIC_SELF_MOCK=true` (default) uses Self's test documents while building. For real proofs the endpoint must be publicly reachable over https (deploy, or a tunnel): set `NEXT_PUBLIC_SELF_ENDPOINT` to the public origin and `NEXT_PUBLIC_SELF_MOCK=false` before building. The QR page and the verifier both read these (`apps/web/lib/self-config.ts`), so they always agree.
 
 ## Reference
 
@@ -143,7 +143,7 @@ Merchants and users verify once at **/verify**: pick your role, scan the QR with
 
 **Layout:** `apps/web` is the whole app — `app/` routes (merchant x402 paywall, ONDC buyer, settlement API, dashboard, identity desk), `lib/server/` the settlement pipeline. `packages/hedera` (x402, Mirror Node, HCS, HTS, scheduled refunds, receipt chain), `packages/ens` (merchant discovery), `packages/og` (0G decisions), `packages/ondc` (buyer-app protocol), `packages/shared` (types, config, FX, UPI), `packages/mcp` (the agent-facing MCP server).
 
-**Key env vars** (all in `.env.example` with comments): `CUSTOMER_*`, `TREASURY_*`, `OPERATOR_*`, `HCS_TOPIC_ID`, `CUSTOMER_MAX_PER_PAYMENT`, `CUSTOMER_TOTAL_BUDGET`, `SETTLEMENT_SHARED_SECRET`, `SANGAM_API_URL`, `OG_*`, `ENS_*`, `PSP_*`, `SELF_MOCK`, `NEXT_PUBLIC_SELF_ENDPOINT`.
+**Key env vars** (all in `.env.example` with comments): `CUSTOMER_*`, `TREASURY_*`, `OPERATOR_*`, `HCS_TOPIC_ID`, `CUSTOMER_MAX_PER_PAYMENT`, `CUSTOMER_TOTAL_BUDGET`, `SETTLEMENT_SHARED_SECRET`, `SANGAM_API_URL`, `OG_*`, `ENS_*`, `PSP_*`, `NEXT_PUBLIC_SELF_MOCK`, `NEXT_PUBLIC_SELF_ENDPOINT`.
 
 ## Running on Windows
 
@@ -165,7 +165,7 @@ PowerShell users: type `curl.exe` where this guide says `curl`, and use `Copy-It
 | Payment rejected by the facilitator | Try another `FACILITATOR_URL`: `https://x402.org/facilitator` or `https://testnet.facilitator.ax402.io`. |
 | Scheduled refund not executing | It's waiting for the treasury's signature (operator ≠ treasury). Sign it, or set `TREASURY_PRIVATE_KEY`. |
 | Receipt chain card shows "propagating" | The Mirror Node is a few seconds behind consensus. It catches up. |
-| Self QR scans but never verifies | The endpoint must be reachable from the phone: in mock mode, check `SELF_MOCK=true` and use the Self app's test mode; for real proofs, deploy or tunnel and set `NEXT_PUBLIC_SELF_ENDPOINT`. |
+| Self QR scans but never verifies | The endpoint must be reachable from the phone: in mock mode, check `NEXT_PUBLIC_SELF_MOCK=true` and use the Self app's test mode; for real proofs, deploy or tunnel and set `NEXT_PUBLIC_SELF_ENDPOINT`. |
 
 ## What's verified
 
@@ -180,7 +180,7 @@ PowerShell users: type `curl.exe` where this guide says `curl`, and use `Copy-It
 | Scheduled refunds | 🟡 needs operator/treasury env set; verified by typecheck + smoke test |
 | Agent budget | ✅ tested (429 path + dashboard bar) |
 | MCP server | ✅ boots, tools run against live ENS + settlement data |
-| Aadhaar identity (Self offchain SDK) | 🟡 mock mode by default; real proofs need a public endpoint + `SELF_MOCK=false` |
+| Aadhaar identity (Self offchain SDK) | 🟡 mock mode by default; real proofs need a public https endpoint + `NEXT_PUBLIC_SELF_MOCK=false` |
 
 ## Built with
 
