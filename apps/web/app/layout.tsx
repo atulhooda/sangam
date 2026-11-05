@@ -1,5 +1,10 @@
 import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import { SpaceBackdrop } from "./components/space/kit";
 import "./globals.css";
+
+const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 const DESCRIPTION =
   "Agents pay in USDC. Merchants get rupees. The settlement rail for the agent economy: x402 on Hedera, decided by 0G, paid out over UPI.";
@@ -23,28 +28,17 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f7f5f0" },
-    { media: "(prefers-color-scheme: dark)", color: "#151412" },
-  ],
-};
+export const viewport: Viewport = { themeColor: "#05060d" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // Applies the stored theme (or the OS preference on first visit) before
-  // first paint, so dark mode never flashes light.
-  const themeScript = `(function(){try{var t=localStorage.getItem("sangam-theme");var d=t?t==="dark":window.matchMedia("(prefers-color-scheme: dark)").matches;if(d)document.documentElement.classList.add("dark");}catch(e){}})();`;
-
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-      </head>
-      <body>
+    <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable}`}>
+      <body className="antialiased">
+        <SpaceBackdrop />
         {/* first Tab stop on every page: jump past the nav */}
         <a
           href="#main"
-          className="sr-only rounded-lg bg-accent px-4 py-2 font-medium text-white focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] dark:text-[#1a1917]"
+          className="sr-only rounded-lg bg-accent px-4 py-2 font-medium text-white focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] dark:text-[#0b0d1a]"
         >
           Skip to content
         </a>
