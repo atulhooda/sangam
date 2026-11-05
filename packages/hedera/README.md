@@ -14,4 +14,12 @@ No smart contracts anywhere: payments are HTS (USDC) transfers and receipts are 
 
 Used by `apps/web/app/merchant/book` (paywall), `apps/web/app/api/pay` (agent), and `apps/web/lib/server/pipeline.ts` (verify + receipt).
 
-**Proof:** settled transaction: _TBD_ · HCS topic: _TBD_
+## Proof (testnet)
+
+First end-to-end agent payment, 1 Nov 2026: the agent (`0.0.6886822`) found `tickets.sangam.eth` on ENS, got a 402, signed 0.515518 USDC with no approval step, the Blocky402 facilitator (`0.0.7162784`) submitted it, and Sangam verified it on the Mirror Node before settling.
+
+| What | Link |
+|---|---|
+| Settled x402 payment (USDC 0.0.429274, customer → treasury) | [0.0.7162784@1793527403.177518448](https://hashscan.io/testnet/transaction/0.0.7162784%401793527403.177518448) |
+| HCS receipt topic | [0.0.11264249](https://hashscan.io/testnet/topic/0.0.11264249) (message #1 is the receipt for this payment) |
+| Treasury | [0.0.11227656](https://hashscan.io/testnet/account/0.0.11227656) |
