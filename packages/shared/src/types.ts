@@ -92,3 +92,14 @@ export type Invoice = {
     extra?: { feePayer?: string };
   }[];
 };
+
+/** GET /api/ens: a merchant's ENS identity as the dashboard shows it. */
+export type EnsView = {
+  name: string;
+  parent: string;
+  source: "ens" | "offline";
+  records: { key: string; value: string }[];
+  registry: string | null;
+  resolver: string | null;
+  links: { app: string; registry: string | null; resolver: string | null };
+};
