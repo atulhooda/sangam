@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Invoice, Quote, Settlement, Stats } from "@/lib/types";
 import { ThemeToggle } from "../components/theme-toggle";
-import { clock, hashscanTx, isInFlight, isSimTx, rupees, shortId, shortTx, timeAgo, usdc } from "./format";
+import { clock, hashscanTopic, hashscanTx, isInFlight, isSimTx, rupees, shortId, shortTx, timeAgo, usdc } from "./format";
 
 /* ───────────────────────── data ───────────────────────── */
 
@@ -32,7 +32,7 @@ function useDashboardData() {
 
   const loadInvoice = useCallback(async () => {
     try {
-      const res = await fetch("/api/book?from=CSMT&to=PUNE", { cache: "no-store" });
+      const res = await fetch("/merchant/book?from=CSMT&to=PUNE", { cache: "no-store" });
       const raw = res.headers.get("PAYMENT-REQUIRED");
       if (res.status === 402 && raw) setInvoice({ raw, decoded: JSON.parse(atob(raw)) as Invoice });
     } catch {
@@ -43,7 +43,7 @@ function useDashboardData() {
   useEffect(() => {
     tick();
     loadInvoice();
-    fetch("/api/quote").then((r) => r.json()).then(setQuote).catch(() => undefined);
+    fetch("/merchant/quote").then((r) => r.json()).then(setQuote).catch(() => undefined);
     const a = setInterval(tick, 1000);
     const b = setInterval(loadInvoice, 30_000);
     return () => {
@@ -151,24 +151,34 @@ function Header({ lastOk, error, now }: { lastOk: number | null; error: boolean;
   );
 }
 
+const MOCK_LABELS: Record<keyof Stats["mocks"], string> = {
+  chainVerify: "chain check skipped",
+  og: "0G mocked",
+  psp: "UPI mocked",
+  ens: "ENS offline",
+  hcs: "HCS not set",
+};
+
 function SimBanner({ stats }: { stats: Stats | null }) {
-  if (!stats) return null;
+  if (!stats || stats.mode === "live") return null;
+  const mocked = (Object.keys(MOCK_LABELS) as (keyof Stats["mocks"])[]).filter((k) => stats.mocks[k]);
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-warn/30 bg-warnbg/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-start gap-3">
         <span aria-hidden className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-warn text-xs font-bold text-surface">!</span>
         <p className="text-sm">
-          <span className="font-semibold">Simulation mode.</span>{" "}
+          <span className="font-semibold">{stats.mode === "simulation" ? "Simulation mode." : "Partly live."}</span>{" "}
           <span className="text-muted">
-            Payments here are simulated. The on-chain check is skipped, the 0G decision and UPI payout are mocked, and no HCS topic is set yet.
+            {stats.mode === "simulation"
+              ? "Every service is mocked. Turn them on one at a time in .env."
+              : "Some services are still mocked. Simulated payments never move money, whatever the settings."}
           </span>
         </p>
       </div>
       <div className="flex flex-wrap gap-1.5 sm:shrink-0 sm:justify-end">
-        <MockTag>chain check skipped</MockTag>
-        <MockTag>0G mocked</MockTag>
-        <MockTag>UPI mocked</MockTag>
-        <MockTag>HCS not set</MockTag>
+        {mocked.map((k) => (
+          <MockTag key={k}>{MOCK_LABELS[k]}</MockTag>
+        ))}
       </div>
     </div>
   );
@@ -403,7 +413,7 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
               <p className="text-lg font-semibold">{s.decision === "payout" ? "Pay out" : "Hold"}</p>
               <p className="mt-2 rounded-lg bg-surface2 p-3 text-sm italic text-muted">“{s.decisionReason?.replace(/^\[mock\]\s*/, "")}”</p>
               <p className="mono mt-2 truncate text-[10.5px] text-muted" title={s.ogChatId ?? ""}>
-                {s.ogChatId?.startsWith("mock-") ? "mock decision · " : "0G chat · "}
+                {s.ogChatId?.startsWith("mock-") ? "mock decision · " : s.ogVerified ? "0G chat, verified · " : "0G chat · "}
                 {s.ogChatId}
               </p>
             </>
@@ -429,9 +439,24 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
               )
             }
           />
+          <LedgerRow
+            k="On-chain check"
+            v={<span className="text-xs text-muted">{isSimTx(s.hederaTxId) ? "simulated" : s.chainVerified ? "Mirror Node ✓" : s.status === "received" ? "—" : "skipped"}</span>}
+          />
           <LedgerRow k="Payer" v={<span className="mono text-xs">{s.payer ?? "—"}</span>} />
           <LedgerRow k="UPI payout ref" v={<span className="mono text-xs" title={s.payoutRef ?? ""}>{s.payoutRef ?? "—"}</span>} />
-          <LedgerRow k="HCS receipt" v={<span className="mono text-xs text-muted">{s.hcsSequence !== null ? `#${s.hcsSequence}` : "not set"}</span>} />
+          <LedgerRow
+            k="HCS receipt"
+            v={
+              s.hcsSequence !== null && s.hcsTopicId ? (
+                <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={hashscanTopic(s.hcsTopicId)} target="_blank" rel="noreferrer">
+                  {s.hcsTopicId} #{s.hcsSequence} ↗
+                </a>
+              ) : (
+                <span className="mono text-xs text-muted">{s.hcsSequence !== null ? `#${s.hcsSequence}` : "not set"}</span>
+              )
+            }
+          />
         </div>
       </div>
     </Card>
@@ -440,8 +465,12 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
 
 /* ───────────────────────── side cards ───────────────────────── */
 
-function TryCard({ onSent }: { onSent: (id: string) => void }) {
-  const [busy, setBusy] = useState<"ok" | "short" | null>(null);
+function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void }) {
+  const [busy, setBusy] = useState<"ok" | "short" | "agent" | null>(null);
+  const [agentMsg, setAgentMsg] = useState<{ ok: boolean; text: string; href?: string } | null>(null);
+  const canSim = stats?.actions.simulate ?? false;
+  const canPay = stats?.actions.payAsAgent ?? false;
+
   async function send(short: boolean) {
     setBusy(short ? "short" : "ok");
     try {
@@ -450,38 +479,89 @@ function TryCard({ onSent }: { onSent: (id: string) => void }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ short }),
       });
-      const s = (await res.json()) as Settlement;
-      onSent(s.id);
+      if (res.ok) onSent();
     } finally {
       setBusy(null);
     }
   }
+
+  async function payAsAgent() {
+    setBusy("agent");
+    setAgentMsg(null);
+    try {
+      const res = await fetch("/api/pay", { method: "POST" });
+      const body = (await res.json()) as { error?: string; hederaTxId?: string; hashscan?: string; ticket?: { pnr: string }; settlement?: Settlement | null };
+      if (!res.ok || !body.hederaTxId) {
+        setAgentMsg({ ok: false, text: body.error ?? `Failed (${res.status})` });
+        return;
+      }
+      setAgentMsg({ ok: true, text: `Paid ${shortTx(body.hederaTxId)} · PNR ${body.ticket?.pnr ?? "—"}`, href: body.hashscan });
+      onSent();
+    } catch (err) {
+      setAgentMsg({ ok: false, text: (err as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <Card>
-      <CardHead title="Send a test payment" hint="An agent pays tickets.sangam.eth. Watch it settle." />
+      <CardHead title="Send a payment" hint="An agent pays tickets.sangam.eth. Watch it settle." />
       <div className="space-y-2.5 p-5">
         <button
-          onClick={() => send(false)}
-          disabled={busy !== null}
+          onClick={payAsAgent}
+          disabled={busy !== null || !canPay}
+          title={canPay ? undefined : "Set CUSTOMER_ACCOUNT_ID and CUSTOMER_PRIVATE_KEY in .env"}
           className="flex w-full items-center justify-between rounded-xl bg-accent px-4 py-3 text-left font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#1a1917]"
         >
           <span>
-            Send a payment
-            <span className="block text-xs font-normal opacity-80">Full price, gets paid out</span>
+            Pay as agent
+            <span className="block text-xs font-normal opacity-80">
+              {canPay ? "Real testnet USDC over x402, no approval step" : "Needs a funded customer account in .env"}
+            </span>
           </span>
-          {busy === "ok" ? <Spinner className="h-4 w-4" /> : <span aria-hidden>→</span>}
+          {busy === "agent" ? <Spinner className="h-4 w-4" /> : <span aria-hidden>→</span>}
         </button>
-        <button
-          onClick={() => send(true)}
-          disabled={busy !== null}
-          className="flex w-full items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 text-left font-medium transition-colors hover:border-warn disabled:opacity-60"
-        >
-          <span>
-            Send an underpayment
-            <span className="block text-xs font-normal text-muted">10% short, gets held</span>
-          </span>
-          {busy === "short" ? <Spinner className="h-4 w-4" /> : <span aria-hidden className="text-muted">→</span>}
-        </button>
+        {agentMsg && (
+          <p className={`rounded-lg p-3 text-xs ${agentMsg.ok ? "bg-surface2 text-muted" : "bg-badbg text-bad"}`} role="status">
+            {agentMsg.text}
+            {agentMsg.href && (
+              <>
+                {" · "}
+                <a className="text-accent underline-offset-2 hover:underline" href={agentMsg.href} target="_blank" rel="noreferrer">
+                  HashScan ↗
+                </a>
+              </>
+            )}
+          </p>
+        )}
+        {canSim && (
+          <>
+            <p className="pt-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Simulated, no money moves</p>
+            <button
+              onClick={() => send(false)}
+              disabled={busy !== null}
+              className="flex w-full items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 text-left font-medium transition-colors hover:border-accent disabled:opacity-60"
+            >
+              <span>
+                Simulate a payment
+                <span className="block text-xs font-normal text-muted">Full price, gets paid out</span>
+              </span>
+              {busy === "ok" ? <Spinner className="h-4 w-4" /> : <span aria-hidden className="text-muted">→</span>}
+            </button>
+            <button
+              onClick={() => send(true)}
+              disabled={busy !== null}
+              className="flex w-full items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 text-left font-medium transition-colors hover:border-warn disabled:opacity-60"
+            >
+              <span>
+                Simulate an underpayment
+                <span className="block text-xs font-normal text-muted">10% short, gets held</span>
+              </span>
+              {busy === "short" ? <Spinner className="h-4 w-4" /> : <span aria-hidden className="text-muted">→</span>}
+            </button>
+          </>
+        )}
       </div>
     </Card>
   );
@@ -663,8 +743,9 @@ export function Dashboard() {
           </div>
           <div className="row-start-2 grid min-w-0 grid-cols-1 gap-5 md:grid-cols-2 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:grid-cols-1">
             <TryCard
+              stats={stats}
               onSent={() => {
-                setPinnedId(null);
+                setPinnedId(null); // follow the newest payment, which is this one
                 refresh();
               }}
             />

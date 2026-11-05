@@ -2,10 +2,8 @@ import "server-only";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { Settlement } from "../types";
+import { REPO_ROOT, type Settlement } from "@sangam/shared";
 
-/** Repo root: `next dev` runs with cwd = apps/web. */
-export const REPO_ROOT = path.resolve(process.cwd(), "../..");
 const FILE = path.join(REPO_ROOT, "data/settlements.json");
 
 /*
@@ -51,6 +49,16 @@ export function listSettlements(): Settlement[] {
 
 export function findByTx(hederaTxId: string): Settlement | undefined {
   return readAll().find((s) => s.hederaTxId === hederaTxId);
+}
+
+export function findById(id: string): Settlement | undefined {
+  return readAll().find((s) => s.id === id);
+}
+
+export function recentForMerchant(merchant: string, limit: number): Settlement[] {
+  return listSettlements()
+    .filter((s) => s.merchant === merchant)
+    .slice(0, limit);
 }
 
 export function recentFromPayer(payer: string, withinMs: number): Settlement[] {
