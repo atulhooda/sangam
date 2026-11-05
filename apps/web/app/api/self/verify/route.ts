@@ -1,6 +1,6 @@
 import { AllIds, DefaultConfigStore, SelfBackendVerifier } from "@selfxyz/core";
-import { flag } from "@sangam/shared";
 import { upsertIdentity } from "@/lib/server/identity";
+import { SELF_SCOPE, selfEndpoint, selfMock } from "@/lib/self-config";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -12,17 +12,16 @@ export const maxDuration = 60;
  * chose to disclose. Aadhaar is attestation id 3; no document data beyond
  * the disclosures ever reaches this server.
  *
- * The endpoint is derived from the request origin, so the same code works on
- * localhost and on the deployed URL. SELF_MOCK=true (default) verifies
- * against Self's test mode — mock documents, no real ID needed while
- * building; set false for live verification.
+ * Scope, endpoint and mock flag come from lib/self-config.ts, the same values
+ * the QR was built with. NEXT_PUBLIC_SELF_MOCK=true (default) verifies against
+ * Self's test mode (mock documents); false verifies real proofs.
  */
 
 function makeVerifier(endpoint: string) {
   return new SelfBackendVerifier(
-    "sangam",
+    SELF_SCOPE,
     endpoint,
-    flag("SELF_MOCK") || process.env.SELF_MOCK === undefined, // default: mock mode
+    selfMock(),
     AllIds, // passport, EU ID card, Aadhaar, KYC
     new DefaultConfigStore({ minimumAge: 18, ofac: false }),
     "uuid",
@@ -46,10 +45,7 @@ export async function POST(req: Request) {
     );
   }
   try {
-    // Same origin the QR was built from (window.location.origin on the desk
-    // page) — so a deployed URL needs no extra env var.
-    const origin = process.env.NEXT_PUBLIC_SELF_ENDPOINT || new URL(req.url).origin;
-    const result = await makeVerifier(`${origin}/api/self/verify`).verify(
+    const result = await makeVerifier(selfEndpoint(new URL(req.url).origin)).verify(
       attestationId as 1 | 2 | 3 | 4,
       proof as never,
       publicSignals as never,
