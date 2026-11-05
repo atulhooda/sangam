@@ -27,4 +27,7 @@ export const isInFlight = (s: Settlement) => s.status === "received" || s.status
 
 export const hashscanTx = (tx: string) => `https://hashscan.io/testnet/transaction/${encodeURIComponent(tx)}`;
 export const hashscanTopic = (topicId: string) => `https://hashscan.io/testnet/topic/${topicId}`;
+export const hashscanSchedule = (scheduleId: string) => `https://hashscan.io/testnet/schedule/${scheduleId}`;
 export const isSimTx = (tx: string) => tx.startsWith("sim-");
+
+export const shortHash = (h: string) => `${h.slice(0, 8)}…${h.slice(-6)}`;

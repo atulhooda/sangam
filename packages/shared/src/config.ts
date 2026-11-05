@@ -27,6 +27,16 @@ function findRepoRoot(): string {
 
 export const REPO_ROOT = findRepoRoot();
 
+/**
+ * Where the JSON stores live (settlements, budget ledger, identities, …).
+ * SANGAM_DATA_DIR points it at a persistent volume (e.g. /data on Railway).
+ * On Vercel the deployment filesystem is read-only, so serverless instances
+ * fall back to /tmp — data survives there between requests on the same
+ * instance but resets on cold starts.
+ */
+export const DATA_DIR =
+  process.env.SANGAM_DATA_DIR?.trim() || (process.env.VERCEL ? "/tmp/sangam-data" : path.join(REPO_ROOT, "data"));
+
 loadEnv({ path: path.join(REPO_ROOT, ".env"), quiet: true });
 
 export function env(name: string): string {

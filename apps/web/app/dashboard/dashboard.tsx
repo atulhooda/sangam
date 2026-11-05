@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Invoice, Quote, Settlement, Stats } from "@/lib/types";
+import type { EnsView, Invoice, Quote, ReceiptChain, Settlement, Stats } from "@/lib/types";
+import { Card, CardHead, LedgerRow, MockTag, Spinner, StatusPill } from "../components/ui";
 import { ThemeToggle } from "../components/theme-toggle";
-import { clock, hashscanTopic, hashscanTx, isInFlight, isSimTx, rupees, shortId, shortTx, timeAgo, usdc } from "./format";
+import { AccountMenu } from "../components/account-menu";
+import { clock, hashscanSchedule, hashscanTopic, hashscanTx, isInFlight, isSimTx, rupees, shortHash, shortId, shortTx, timeAgo, usdc } from "./format";
 
 /* ───────────────────────── data ───────────────────────── */
 
@@ -11,6 +13,7 @@ function useDashboardData() {
   const [settlements, setSettlements] = useState<Settlement[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [ens, setEns] = useState<EnsView | { error: string } | null>(null);
   const [invoice, setInvoice] = useState<{ decoded: Invoice; raw: string } | null>(null);
   const [lastOk, setLastOk] = useState<number | null>(null);
   const [error, setError] = useState(false);
@@ -44,6 +47,10 @@ function useDashboardData() {
     tick();
     loadInvoice();
     fetch("/merchant/quote").then((r) => r.json()).then(setQuote).catch(() => undefined);
+    fetch("/api/ens", { cache: "no-store" })
+      .then((r) => r.json())
+      .then(setEns)
+      .catch(() => setEns({ error: "Could not reach /api/ens" }));
     const a = setInterval(tick, 1000);
     const b = setInterval(loadInvoice, 30_000);
     return () => {
@@ -52,7 +59,7 @@ function useDashboardData() {
     };
   }, [tick, loadInvoice]);
 
-  return { settlements, stats, quote, invoice, lastOk, error, refresh: tick };
+  return { settlements, stats, quote, ens, invoice, lastOk, error, refresh: tick };
 }
 
 /** Re-render every second so "x seconds ago" labels stay fresh. */
@@ -66,60 +73,6 @@ function useNow() {
 }
 
 /* ───────────────────────── small pieces ───────────────────────── */
-
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <section className={`rounded-2xl border border-line bg-surface ${className}`}>{children}</section>;
-}
-
-function CardHead({ title, hint, right }: { title: string; hint?: string; right?: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
-      <div className="min-w-0">
-        <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
-        {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
-      </div>
-      {right}
-    </div>
-  );
-}
-
-function Spinner({ className = "" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" className={`h-3 w-3 animate-spin ${className}`} aria-hidden>
-      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
-      <path d="M14 8a6 6 0 0 0-6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-/** Status colours are reserved for state, and always carry an icon + label. */
-function StatusPill({ s }: { s: Settlement }) {
-  if (isInFlight(s))
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-infobg px-2.5 py-0.5 text-xs font-medium text-info">
-        <Spinner /> Processing
-      </span>
-    );
-  const map = {
-    paid: { cls: "bg-okbg text-ok", icon: "✓", label: "Paid" },
-    held: { cls: "bg-warnbg text-warn", icon: "‖", label: "Held" },
-    failed: { cls: "bg-badbg text-bad", icon: "✕", label: "Failed" },
-  } as const;
-  const m = map[s.status as keyof typeof map];
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${m.cls}`}>
-      <span aria-hidden className="font-bold">{m.icon}</span> {m.label}
-    </span>
-  );
-}
-
-function MockTag({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded-md border border-dashed border-warn/50 px-1.5 py-px text-[10px] font-medium text-warn">
-      {children}
-    </span>
-  );
-}
 
 /* ───────────────────────── header + banner ───────────────────────── */
 
@@ -145,6 +98,7 @@ function Header({ lastOk, error, now }: { lastOk: number | null; error: boolean;
           <a href="/" className="hidden rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent hover:text-ink sm:block">
             ← Home
           </a>
+          <AccountMenu />
         </div>
       </div>
     </header>
@@ -200,7 +154,9 @@ function Kpis({ stats, settlements }: { stats: Stats | null; settlements: Settle
         <p className="mt-3 text-sm text-muted">
           {stats ? (
             <>
-              Across <span className="font-medium text-ink">{stats.paidCount}</span> UPI payout{stats.paidCount === 1 ? "" : "s"} to tickets@razorpay ·{" "}
+              Across <span className="font-medium text-ink">{stats.paidCount}</span> UPI payout{stats.paidCount === 1 ? "" : "s"} to{" "}
+              <span className="font-medium text-ink">{new Set((settlements ?? []).filter((x) => x.status === "paid").map((x) => x.merchant)).size || "—"}</span> merchant
+              {new Set((settlements ?? []).filter((x) => x.status === "paid").map((x) => x.merchant)).size === 1 ? "" : "s"} ·{" "}
               <span className="font-medium text-ink">50 bps</span> fee
             </>
           ) : (
@@ -243,12 +199,25 @@ function Kpis({ stats, settlements }: { stats: Stats | null; settlements: Settle
 type StepState = "done" | "active" | "warn" | "fail" | "todo" | "skipped";
 
 const STAGES = [
-  { title: "Received", who: "merchant-api notice", tag: null },
-  { title: "Verified", who: "Hedera Mirror Node", tag: "skipped · sim" },
-  { title: "Decided", who: "0G Compute", tag: "mock" },
-  { title: "Paid out", who: "UPI · RazorpayX", tag: "mock" },
-  { title: "Receipt", who: "Hedera Consensus Service", tag: "not set" },
+  { title: "Received", who: "merchant-api notice" },
+  { title: "Verified", who: "Hedera Mirror Node" },
+  { title: "Decided", who: "0G Compute" },
+  { title: "Paid out", who: "UPI · RazorpayX" },
+  { title: "Receipt", who: "Hedera Consensus Service" },
 ] as const;
+
+/** Per-payment tags: what was actually skipped or mocked for *this* payment, not the global settings. */
+function stageTags(s: Settlement, states: StepState[]): (string | null)[] {
+  const sim = isSimTx(s.hederaTxId);
+  const past = (i: number) => states[i] === "done" || states[i] === "warn" || states[i] === "fail";
+  return [
+    s.source === "transfer" ? "wallet transfer" : null,
+    sim ? "skipped · sim" : past(1) && !s.chainVerified ? "skipped" : null,
+    s.ogChatId?.startsWith("mock-") ? "mock" : null,
+    s.payoutMode === "mock" && s.status === "paid" ? "mock" : null,
+    states[4] === "skipped" ? (sim ? "not for sims" : s.status === "held" ? null : "not set") : null,
+  ];
+}
 
 function stageStates(s: Settlement): StepState[] {
   switch (s.status) {
@@ -275,18 +244,18 @@ function Node({ state, n }: { state: StepState; n: number }) {
   const base = "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-colors duration-300";
   switch (state) {
     case "done":
-      return <span className={`${base} bg-ok text-white dark:text-[#1a1917]`}>✓</span>;
+      return <span className={`${base} bg-ok text-white dark:text-[#0e0d13]`}>✓</span>;
     case "active":
       return (
-        <span className={`${base} bg-accent text-white dark:text-[#1a1917]`}>
+        <span className={`${base} bg-accent text-white dark:text-[#0e0d13]`}>
           <span className="absolute inset-0 animate-ping rounded-full bg-accent/40" />
           <Spinner className="relative h-4 w-4" />
         </span>
       );
     case "warn":
-      return <span className={`${base} bg-warn text-white dark:text-[#1a1917]`}>‖</span>;
+      return <span className={`${base} bg-warn text-white dark:text-[#0e0d13]`}>‖</span>;
     case "fail":
-      return <span className={`${base} bg-bad text-white dark:text-[#1a1917]`}>✕</span>;
+      return <span className={`${base} bg-bad text-white dark:text-[#0e0d13]`}>✕</span>;
     case "skipped":
       return <span className={`${base} border-2 border-dashed border-line text-muted`}>–</span>;
     default:
@@ -306,6 +275,7 @@ function Connector({ from, to, vertical = false }: { from: StepState; to: StepSt
 
 function Pipeline({ s }: { s: Settlement }) {
   const states = stageStates(s);
+  const tags = stageTags(s, states);
   return (
     <>
       {/* desktop: horizontal */}
@@ -322,7 +292,7 @@ function Pipeline({ s }: { s: Settlement }) {
             </span>
             <p className="mt-3 text-sm font-semibold">{st.title}</p>
             <p className="mt-0.5 text-[11px] text-muted">{st.who}</p>
-            {st.tag && (st.tag !== "not set" || states[i] === "skipped") && <span className="mt-2"><MockTag>{st.tag}</MockTag></span>}
+            {tags[i] && <span className="mt-2"><MockTag>{tags[i]}</MockTag></span>}
           </li>
         ))}
       </ol>
@@ -342,22 +312,13 @@ function Pipeline({ s }: { s: Settlement }) {
               <p className="text-sm font-semibold">{st.title}</p>
               <p className="text-[11px] text-muted">{st.who}</p>
             </div>
-            {st.tag && (st.tag !== "not set" || states[i] === "skipped") && (
-              <span className="ml-auto pt-2"><MockTag>{st.tag}</MockTag></span>
+            {tags[i] && (
+              <span className="ml-auto pt-2"><MockTag>{tags[i]}</MockTag></span>
             )}
           </li>
         ))}
       </ol>
     </>
-  );
-}
-
-function LedgerRow({ k, v, tone, strong }: { k: string; v: React.ReactNode; tone?: string; strong?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 py-2">
-      <span className="shrink-0 whitespace-nowrap text-sm text-muted">{k}</span>
-      <span className={`min-w-0 truncate text-right text-sm tabular-nums ${strong ? "font-semibold" : ""} ${tone ?? ""}`}>{v}</span>
-    </div>
   );
 }
 
@@ -444,7 +405,33 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
             v={<span className="text-xs text-muted">{isSimTx(s.hederaTxId) ? "simulated" : s.chainVerified ? "Mirror Node ✓" : s.status === "received" ? "—" : "skipped"}</span>}
           />
           <LedgerRow k="Payer" v={<span className="mono text-xs">{s.payer ?? "—"}</span>} />
+          {s.refund && (
+            <LedgerRow
+              k="Scheduled refund"
+              v={
+                <a
+                  className="mono text-xs text-warn underline-offset-2 hover:underline"
+                  href={hashscanSchedule(s.refund.scheduleId)}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="USDC back to the payer once the treasury's signature lands"
+                >
+                  {s.refund.scheduleId} · {usdc(s.refund.amountAtomic)} USDC ↗
+                </a>
+              }
+            />
+          )}
           <LedgerRow k="UPI payout ref" v={<span className="mono text-xs" title={s.payoutRef ?? ""}>{s.payoutRef ?? "—"}</span>} />
+          {s.ondc && (
+            <>
+              <LedgerRow k="ONDC order" v={<span className="mono text-xs" title={s.ondc.transactionId}>{s.ondc.orderId} · {s.ondc.state}</span>} />
+              <LedgerRow k="ONDC seller" v={<span className="text-xs" title={s.ondc.bppId}>{s.ondc.providerName}</span>} />
+              <LedgerRow
+                k="Items"
+                v={<span className="text-xs">{s.ondc.items.map((i) => i.name).join(", ")} · {rupees(s.ondc.quoteInrPaise)}</span>}
+              />
+            </>
+          )}
           <LedgerRow
             k="HCS receipt"
             v={
@@ -466,9 +453,19 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
 /* ───────────────────────── side cards ───────────────────────── */
 
 function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void }) {
-  const [busy, setBusy] = useState<"ok" | "short" | "agent" | null>(null);
-  const [agentMsg, setAgentMsg] = useState<{ ok: boolean; text: string; href?: string } | null>(null);
+  const [busy, setBusy] = useState<"ok" | "short" | "agent" | "ondc" | "scam" | null>(null);
+  const [agentMsg, setAgentMsg] = useState<{ ok: boolean; text: string; href?: string; refused?: boolean } | null>(null);
   const canSim = stats?.actions.simulate ?? false;
+  // Signed-in buyer with a connected wallet? The agent pays from it.
+  const [myWallet, setMyWallet] = useState<{ accountId: string; balanceAtomic: string | null; remainingAtomic: string } | null>(null);
+  useEffect(() => {
+    fetch("/api/buyer/wallet", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { wallet?: { accountId: string } | null; balanceAtomic?: string | null; remainingAtomic?: string } | null) =>
+        setMyWallet(j?.wallet ? { accountId: j.wallet.accountId, balanceAtomic: j.balanceAtomic ?? null, remainingAtomic: j.remainingAtomic ?? "0" } : null),
+      )
+      .catch(() => setMyWallet(null));
+  }, [busy]);
   const canPay = stats?.actions.payAsAgent ?? false;
 
   async function send(short: boolean) {
@@ -485,17 +482,42 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
     }
   }
 
-  async function payAsAgent() {
-    setBusy("agent");
+  async function payAsAgent(kind: "ticket" | "ondc" | "scam") {
+    setBusy(kind === "ondc" ? "ondc" : kind === "scam" ? "scam" : "agent");
     setAgentMsg(null);
     try {
-      const res = await fetch("/api/pay", { method: "POST" });
-      const body = (await res.json()) as { error?: string; hederaTxId?: string; hashscan?: string; ticket?: { pnr: string }; settlement?: Settlement | null };
+      const res = await fetch("/api/pay", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(kind === "ondc" ? { kind, q: "atta", qty: 1 } : { kind }),
+      });
+      const body = (await res.json()) as {
+        refused?: boolean;
+        error?: string;
+        hederaTxId?: string;
+        hashscan?: string;
+        bought?: string;
+        ticket?: { pnr: string };
+        result?: { ondc?: { orderId: string; state: string } };
+      };
+      if (body.refused) {
+        // The agent's verified-merchants-only check stopped the payment: the right outcome.
+        setAgentMsg({ ok: true, refused: true, text: `🛡️ Agent refused to pay, nothing was signed. ${body.error ?? ""}` });
+        return;
+      }
+      if (kind === "scam") {
+        setAgentMsg({ ok: false, text: body.error ?? `The scam site was not refused (${res.status})` });
+        return;
+      }
       if (!res.ok || !body.hederaTxId) {
         setAgentMsg({ ok: false, text: body.error ?? `Failed (${res.status})` });
         return;
       }
-      setAgentMsg({ ok: true, text: `Paid ${shortTx(body.hederaTxId)} · PNR ${body.ticket?.pnr ?? "—"}`, href: body.hashscan });
+      const detail =
+        kind === "ondc"
+          ? `${body.bought} · ONDC order ${body.result?.ondc?.orderId ?? "—"} (${body.result?.ondc?.state ?? "?"})`
+          : `PNR ${body.ticket?.pnr ?? "—"}`;
+      setAgentMsg({ ok: true, text: `Paid ${shortTx(body.hederaTxId)} · ${detail}`, href: body.hashscan });
       onSent();
     } catch (err) {
       setAgentMsg({ ok: false, text: (err as Error).message });
@@ -508,11 +530,41 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
     <Card>
       <CardHead title="Send a payment" hint="An agent pays tickets.sangam.eth. Watch it settle." />
       <div className="space-y-2.5 p-5">
+        <p className="rounded-xl bg-surface2 px-4 py-2.5 text-xs text-muted">
+          {myWallet ? (
+            <>
+              Pays from <span className="font-medium text-ink">your agent wallet</span> <span className="mono">{myWallet.accountId}</span>
+              {myWallet.balanceAtomic !== null && <> · {usdc(myWallet.balanceAtomic, 2)} USDC</>} · {usdc(myWallet.remainingAtomic, 2)} budget left
+            </>
+          ) : (
+            <>
+              Pays from Sangam's demo account. <a className="text-accent underline-offset-2 hover:underline" href="/buyer">Connect your own agent wallet</a> on the buyer desk to pay from it.
+            </>
+          )}
+        </p>
+        {!myWallet && stats?.budget && (
+          <div className="rounded-xl border border-line bg-surface2 px-4 py-3" title="CUSTOMER_TOTAL_BUDGET: the agent's cumulative USDC cap">
+            <div className="flex items-baseline justify-between gap-3 text-xs">
+              <span className="text-muted">Agent budget left</span>
+              <span className="tabular-nums font-medium">
+                {usdc(stats.budget.remainingAtomic, 2)} <span className="text-muted">of {usdc(stats.budget.limitAtomic, 2)} USDC</span>
+              </span>
+            </div>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-line">
+              <div
+                className="h-full rounded-full bg-accent transition-[width] duration-500"
+                style={{
+                  width: `${Math.min(100, (Number(stats.budget.remainingAtomic) / Math.max(1, Number(stats.budget.limitAtomic))) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
         <button
-          onClick={payAsAgent}
+          onClick={() => payAsAgent("ticket")}
           disabled={busy !== null || !canPay}
           title={canPay ? undefined : "Set CUSTOMER_ACCOUNT_ID and CUSTOMER_PRIVATE_KEY in .env"}
-          className="flex w-full items-center justify-between rounded-xl bg-accent px-4 py-3 text-left font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#1a1917]"
+          className="flex w-full items-center justify-between rounded-xl bg-accent px-4 py-3 text-left font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0e0d13]"
         >
           <span>
             Pay as agent
@@ -522,8 +574,32 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
           </span>
           {busy === "agent" ? <Spinner className="h-4 w-4" /> : <span aria-hidden>→</span>}
         </button>
+        <button
+          onClick={() => payAsAgent("ondc")}
+          disabled={busy !== null || !canPay}
+          title={canPay ? undefined : "Set CUSTOMER_ACCOUNT_ID and CUSTOMER_PRIVATE_KEY in .env"}
+          className="flex w-full items-center justify-between rounded-xl border border-accent/50 bg-surface px-4 py-3 text-left font-medium transition-colors hover:border-accent disabled:opacity-60"
+        >
+          <span>
+            Buy on ONDC as agent
+            <span className="block text-xs font-normal text-muted">10 kg atta from an ONDC seller, ~₹460 in USDC</span>
+          </span>
+          {busy === "ondc" ? <Spinner className="h-4 w-4" /> : <span aria-hidden className="text-muted">→</span>}
+        </button>
+        <button
+          onClick={() => payAsAgent("scam")}
+          disabled={busy !== null || !canPay}
+          title="A fake IRCTC site that claims to be tickets.sangam.eth but asks to be paid elsewhere"
+          className="flex w-full items-center justify-between rounded-xl border border-bad/40 bg-surface px-4 py-3 text-left font-medium transition-colors hover:border-bad disabled:opacity-60"
+        >
+          <span>
+            Try a fake IRCTC site
+            <span className="block text-xs font-normal text-muted">Impersonates tickets.sangam.eth: the agent should refuse</span>
+          </span>
+          {busy === "scam" ? <Spinner className="h-4 w-4" /> : <span aria-hidden className="text-muted">🛡️</span>}
+        </button>
         {agentMsg && (
-          <p className={`rounded-lg p-3 text-xs ${agentMsg.ok ? "bg-surface2 text-muted" : "bg-badbg text-bad"}`} role="status">
+          <p className={`rounded-lg p-3 text-xs ${agentMsg.refused ? "bg-okbg text-ok" : agentMsg.ok ? "bg-surface2 text-muted" : "bg-badbg text-bad"}`} role="status">
             {agentMsg.text}
             {agentMsg.href && (
               <>
@@ -590,7 +666,7 @@ function InvoiceCard({ invoice }: { invoice: { decoded: Invoice; raw: string } |
               {raw ? "Hide" : "Show"} raw PAYMENT-REQUIRED header
             </button>
             {raw && (
-              <pre className="mono mt-2 max-h-32 overflow-auto break-all whitespace-pre-wrap rounded-lg bg-[#1a1917] p-3 text-[10.5px] text-[#ece9e2]">
+              <pre className="mono mt-2 max-h-32 overflow-auto break-all whitespace-pre-wrap rounded-lg bg-[#0e0d13] p-3 text-[10.5px] text-[#efeff4]">
                 {invoice!.raw}
               </pre>
             )}
@@ -603,26 +679,153 @@ function InvoiceCard({ invoice }: { invoice: { decoded: Invoice; raw: string } |
   );
 }
 
-function MerchantCard({ quote }: { quote: Quote | null }) {
+function ExtLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a className="text-accent underline-offset-2 hover:underline" href={href} target="_blank" rel="noreferrer">
+      {children} ↗
+    </a>
+  );
+}
+
+const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+function MerchantCard({
+  quote,
+  ens,
+  verified,
+}: {
+  quote: Quote | null;
+  ens: EnsView | { error: string } | null;
+  verified: boolean;
+}) {
+  const view = ens && !("error" in ens) ? ens : null;
   return (
     <Card>
-      <CardHead title="Merchant" hint="Found by ENS name" />
+      <CardHead
+        title="Merchant on ENS"
+        hint={view?.source === "ens" ? "Read live from ENSv2 on Sepolia" : "Found by ENS name"}
+        right={
+          view ? (
+            <div className="flex items-center gap-1.5">
+              {verified && (
+                <span className="rounded-full bg-okbg px-2 py-0.5 text-[11px] font-medium text-ok" title="Verified with the Self offchain SDK via Aadhaar">
+                  Aadhaar ✓
+                </span>
+              )}
+              {view.source === "ens" ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-okbg px-2 py-0.5 text-[11px] font-medium text-ok">
+                  <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-ok" /> live
+                </span>
+              ) : (
+                <MockTag>ENS offline</MockTag>
+              )}
+            </div>
+          ) : null
+        }
+      />
       <div className="px-5 py-3">
-        {quote ? (
+        {view ? (
           <>
-            <p className="mono mb-1 text-sm font-semibold text-accent">{quote.merchant}</p>
-            <LedgerRow k="Price" v={<>₹{quote.priceInr} <span className="text-muted">· {Number(quote.priceUsdc).toFixed(4)} USDC</span></>} />
-            <LedgerRow k="UPI handle" v={<span className="mono text-xs">{quote.upiHandle}</span>} />
-            <LedgerRow k="Hedera account" v={<span className="mono text-xs">{quote.payTo}</span>} />
-            <div className="flex flex-wrap gap-1.5 pb-1 pt-2">
-              {quote.routes.map((r) => (
-                <span key={r} className="mono rounded-md border border-line px-2 py-0.5 text-[11px] text-muted">{r.replace("-", " → ")}</span>
+            <p className="mono mb-1 break-all text-sm font-semibold text-accent">
+              <ExtLink href={view.links.app}>{view.name}</ExtLink>
+            </p>
+            <p className="mb-2 text-xs text-muted">
+              Issued by Sangam under <span className="mono">{view.parent}</span>. The merchant needs no wallet.
+            </p>
+            {quote && <LedgerRow k="Price" v={<>₹{quote.priceInr} <span className="text-muted">· {Number(quote.priceUsdc).toFixed(4)} USDC</span></>} />}
+
+            <p className="mb-1 mt-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Text records</p>
+            <div className="rounded-lg bg-surface2 px-3 py-1">
+              {view.records.map((r) => (
+                <div key={r.key} className="flex items-baseline justify-between gap-3 py-1">
+                  <span className="mono shrink-0 text-[11px] text-muted">{r.key}</span>
+                  <span className="mono min-w-0 truncate text-right text-[11px]" title={r.value}>{r.value}</span>
+                </div>
               ))}
             </div>
+
+            {(view.registry || view.resolver) && (
+              <>
+                <p className="mb-1 mt-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">ENSv2 contracts</p>
+                {view.registry && view.links.registry && (
+                  <LedgerRow k="Subname registry" v={<span className="mono text-xs"><ExtLink href={view.links.registry}>{short(view.registry)}</ExtLink></span>} />
+                )}
+                {view.resolver && view.links.resolver && (
+                  <LedgerRow k="Resolver" v={<span className="mono text-xs"><ExtLink href={view.links.resolver}>{short(view.resolver)}</ExtLink></span>} />
+                )}
+              </>
+            )}
+
+            {quote && (
+              <div className="flex flex-wrap gap-1.5 pb-1 pt-3">
+                {quote.routes.map((r) => (
+                  <span key={r} className="mono rounded-md border border-line px-2 py-0.5 text-[11px] text-muted">{r.replace("-", " → ")}</span>
+                ))}
+              </div>
+            )}
           </>
+        ) : ens && "error" in ens ? (
+          <p className="my-3 rounded-lg bg-badbg p-3 text-sm text-bad">{ens.error}</p>
         ) : (
           <p className="py-4 text-sm text-muted">Loading…</p>
         )}
+      </div>
+    </Card>
+  );
+}
+
+/* ───────────────────────── receipt chain ───────────────────────── */
+
+function ReceiptChainCard() {
+  const [chain, setChain] = useState<ReceiptChain | null>(null);
+  useEffect(() => {
+    const load = () =>
+      fetch("/api/receipts", { cache: "no-store" })
+        .then((r) => r.json() as Promise<ReceiptChain>)
+        .then(setChain)
+        .catch(() => undefined);
+    load();
+    const t = setInterval(load, 10_000); // the mirror node lags a few seconds; no point polling faster
+    return () => clearInterval(t);
+  }, []);
+
+  if (!chain?.enabled) return null;
+  const pill = chain.error ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-badbg px-2.5 py-0.5 text-xs font-medium text-bad">✕ {chain.error}</span>
+  ) : chain.lagging ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-infobg px-2.5 py-0.5 text-xs font-medium text-info">
+      <Spinner /> Latest receipts propagating
+    </span>
+  ) : chain.intact ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-okbg px-2.5 py-0.5 text-xs font-medium text-ok">✓ Chain intact</span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-badbg px-2.5 py-0.5 text-xs font-medium text-bad">✗ Broken at #{chain.brokenAtSeq}</span>
+  );
+
+  return (
+    <Card>
+      <CardHead title="Receipt chain" hint="Every HCS receipt links to the one before it — replayed from the Mirror Node, not our files." right={pill} />
+      <div className="px-5 py-3">
+        {chain.head ? (
+          <>
+            <LedgerRow
+              k="Topic"
+              v={
+                <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={hashscanTopic(chain.topicId)} target="_blank" rel="noreferrer">
+                  {chain.topicId} ↗
+                </a>
+              }
+            />
+            <LedgerRow k="Receipts" v={<span className="tabular-nums">#{chain.head.seq} of {chain.length}</span>} />
+            <LedgerRow k="Head hash" v={<span className="mono text-[10.5px]" title={chain.head.hash}>{shortHash(chain.head.hash)}</span>} />
+          </>
+        ) : (
+          <p className="py-3 text-sm text-muted">No receipts on the topic yet.</p>
+        )}
+        <p className="mt-2 text-[11px] leading-relaxed text-muted">
+          Each receipt carries the previous receipt's sha256, so dropping or reordering one breaks the chain — for
+          everyone, not just for us.
+        </p>
       </div>
     </Card>
   );
@@ -703,9 +906,25 @@ function PaymentsTable({ rows, selectedId, onSelect, now }: { rows: Settlement[]
 /* ───────────────────────── page ───────────────────────── */
 
 export function Dashboard() {
-  const { settlements, stats, quote, invoice, lastOk, error, refresh } = useDashboardData();
+  const { settlements, stats, quote, ens, invoice, lastOk, error, refresh } = useDashboardData();
   const now = useNow();
   const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const [merchantVerified, setMerchantVerified] = useState(false);
+
+  // Whether the ENS merchant has an Aadhaar-verified identity (refreshed on settle).
+  useEffect(() => {
+    const load = () =>
+      fetch("/api/self/identities", { cache: "no-store" })
+        .then((r) => r.json() as Promise<{ role: string; label: string }[]>)
+        .then((rows) => {
+          const name = typeof ens === "object" && ens && !("error" in ens) ? ens.name : null;
+          setMerchantVerified(!!name && rows.some((i) => i.role === "merchant" && i.label.toLowerCase() === name.toLowerCase()));
+        })
+        .catch(() => undefined);
+    load();
+    const t = setInterval(load, 15_000);
+    return () => clearInterval(t);
+  }, [ens]);
 
   const rows = useMemo(() => settlements ?? [], [settlements]);
   const pinned = pinnedId ? rows.find((s) => s.id === pinnedId) : undefined;
@@ -717,7 +936,7 @@ export function Dashboard() {
       <main id="main" tabIndex={-1} className="mx-auto max-w-7xl space-y-5 px-5 py-6 outline-none sm:py-8">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Settlement desk</h1>
+            <h1 className="display text-2xl font-semibold tracking-tight sm:text-3xl">Settlement desk</h1>
             <p className="mt-1 text-sm text-muted">Every agent payment, from USDC in to rupees out.</p>
           </div>
         </div>
@@ -749,8 +968,9 @@ export function Dashboard() {
                 refresh();
               }}
             />
+            <ReceiptChainCard />
             <InvoiceCard invoice={invoice} />
-            <MerchantCard quote={quote} />
+            <MerchantCard quote={quote} ens={ens} verified={merchantVerified} />
           </div>
         </div>
       </main>

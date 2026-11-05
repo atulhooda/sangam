@@ -1,5 +1,6 @@
 import { Backdrop } from "./components/backdrop";
 import { ThemeToggle } from "./components/theme-toggle";
+import { AccountMenu } from "./components/account-menu";
 import { TwoWorlds } from "./components/two-worlds";
 import { FiveSteps } from "./components/five-steps";
 import { FourDepartments } from "./components/four-departments";
@@ -27,6 +28,7 @@ export default function Home() {
           <a href="#how" className="hidden text-muted hover:text-ink sm:block">How it works</a>
           <a href="#what" className="hidden text-muted hover:text-ink sm:block">What it is</a>
           <ThemeToggle />
+          <AccountMenu />
           <a
             href="/dashboard"
             className="rounded-lg bg-accent px-4 py-2 font-medium text-white transition-opacity hover:opacity-90"
@@ -41,7 +43,7 @@ export default function Home() {
         <p className="mb-4 inline-block rounded-full bg-accentbg px-3 py-1 text-xs font-medium text-accent">
           Settlement rail for the agent economy
         </p>
-        <h1 className="mx-auto max-w-3xl text-4xl font-bold tracking-tight sm:text-6xl">
+        <h1 className="display mx-auto max-w-3xl text-4xl font-semibold tracking-tight sm:text-6xl">
           Agents pay in <span className="text-accent">USDC</span>.
           <br />
           Merchants get <span className="text-accent">rupees</span>.

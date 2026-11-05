@@ -11,6 +11,10 @@ export const USDC_DECIMALS = HEDERA_USDC_DECIMALS;
 
 export const mirrorNodeUrl = () => envOr("MIRROR_NODE_URL", "https://testnet.mirrornode.hedera.com");
 
+/** The account that receives USDC (and, when it equals the operator, can refund alone). */
+export const treasuryAccountId = () => env("TREASURY_ACCOUNT_ID");
+export const operatorAccountId = () => env("OPERATOR_ACCOUNT_ID");
+
 const g = globalThis as unknown as { __sangamHederaOperator?: Client };
 
 /**
