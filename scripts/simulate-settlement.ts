@@ -1,25 +1,18 @@
-// Dev only: send fake settlement notices so you can test settlement-agent and
-// the dashboard without Hedera accounts. The agent must run with SKIP_CHAIN_VERIFY=true.
+// Dev only: create simulated payments (no money moves) so you can watch the
+// dashboard without Hedera accounts. Needs `npm run web` running.
 //   npm run simulate -- [count] [--short]
-import { env, envOr, inrPerUsd, paiseToUsdcAtomic, resolveMerchant } from "@sangam/shared";
+import { envOr } from "@sangam/shared";
 
 const count = Number(process.argv[2] ?? 1);
 const short = process.argv.includes("--short"); // underpay by 10% to exercise the "hold" path
-const merchantName = env("MERCHANT_ENS_NAME");
-const merchant = await resolveMerchant(merchantName);
-let atomic = paiseToUsdcAtomic(merchant.priceInrPaise, await inrPerUsd());
-if (short) atomic = (atomic * 9n) / 10n;
+const base = envOr("SANGAM_API_URL", "http://localhost:5173");
 
 for (let i = 0; i < count; i++) {
-  const res = await fetch(`${envOr("SETTLEMENT_AGENT_URL", "http://localhost:3001")}/settlements`, {
+  const res = await fetch(`${base}/api/simulate`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-sangam-key": env("SETTLEMENT_SHARED_SECRET") },
-    body: JSON.stringify({
-      merchant: merchantName,
-      hederaTxId: `sim-0.0.1001@${Date.now()}.${i}`,
-      payer: "0.0.1001",
-      usdcAmount: atomic.toString(),
-    }),
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ short }),
   });
-  console.log(res.status, JSON.stringify(await res.json()).slice(0, 120));
+  const body = (await res.json()) as { id?: string; error?: string };
+  console.log(res.ok ? `simulated settlement ${body.id}` : `failed (${res.status}): ${body.error}`);
 }
