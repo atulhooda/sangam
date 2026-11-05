@@ -12,20 +12,22 @@ export const maxDuration = 60;
  * chose to disclose. Aadhaar is attestation id 3; no document data beyond
  * the disclosures ever reaches this server.
  *
- * SELF_MOCK=true (default) verifies against Self's test mode — mock
- * documents, no real ID needed while building. Set false for live
- * verification; the endpoint must then be publicly reachable (deploy or a
- * tunnel) so the phone app can POST to it.
+ * The endpoint is derived from the request origin, so the same code works on
+ * localhost and on the deployed URL. SELF_MOCK=true (default) verifies
+ * against Self's test mode — mock documents, no real ID needed while
+ * building; set false for live verification.
  */
 
-const verifier = new SelfBackendVerifier(
-  "sangam",
-  process.env.NEXT_PUBLIC_SELF_ENDPOINT || "http://localhost:5173/api/self/verify",
-  flag("SELF_MOCK") || process.env.SELF_MOCK === undefined, // default: mock mode
-  AllIds, // passport, EU ID card, Aadhaar, KYC
-  new DefaultConfigStore({ minimumAge: 18, ofac: false }),
-  "uuid",
-);
+function makeVerifier(endpoint: string) {
+  return new SelfBackendVerifier(
+    "sangam",
+    endpoint,
+    flag("SELF_MOCK") || process.env.SELF_MOCK === undefined, // default: mock mode
+    AllIds, // passport, EU ID card, Aadhaar, KYC
+    new DefaultConfigStore({ minimumAge: 18, ofac: false }),
+    "uuid",
+  );
+}
 
 type SelfProofBody = {
   attestationId?: number;
@@ -44,7 +46,15 @@ export async function POST(req: Request) {
     );
   }
   try {
-    const result = await verifier.verify(attestationId as 1 | 2 | 3 | 4, proof as never, publicSignals as never, userContextData);
+    // Same origin the QR was built from (window.location.origin on the desk
+    // page) — so a deployed URL needs no extra env var.
+    const origin = process.env.NEXT_PUBLIC_SELF_ENDPOINT || new URL(req.url).origin;
+    const result = await makeVerifier(`${origin}/api/self/verify`).verify(
+      attestationId as 1 | 2 | 3 | 4,
+      proof as never,
+      publicSignals as never,
+      userContextData,
+    );
     if (!result.isValidDetails.isValid) {
       return Response.json(
         { status: "error", result: false, reason: "verification failed", error_code: "VERIFICATION_FAILED", details: result.isValidDetails },

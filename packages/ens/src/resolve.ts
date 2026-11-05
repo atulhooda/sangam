@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { normalize } from "viem/ens";
-import { REPO_ROOT, flag, type MerchantRecord } from "@sangam/shared";
+import { DATA_DIR, REPO_ROOT, flag, type MerchantRecord } from "@sangam/shared";
 import { sepoliaClient } from "./client.ts";
 import { MERCHANT_FIELDS, MERCHANT_TEXT_KEYS, type MerchantField } from "./records.ts";
 
@@ -43,7 +43,7 @@ export async function resolveMerchant(ensName: string): Promise<MerchantRecord> 
 }
 
 /* Last records successfully read from ENS, kept on disk so a restart survives an RPC outage. */
-const LAST_GOOD_FILE = path.join(REPO_ROOT, "data/ens-cache.local.json");
+const LAST_GOOD_FILE = path.join(DATA_DIR, "ens-cache.local.json");
 
 function readLastGood(ensName: string): MerchantRecord | undefined {
   if (!existsSync(LAST_GOOD_FILE)) return undefined;
@@ -95,7 +95,7 @@ async function readEnsMerchant(ensName: string): Promise<MerchantRecord> {
 }
 
 function readLocalMerchant(ensName: string): MerchantRecord {
-  const file = path.join(REPO_ROOT, "data/merchants.local.json");
+  const file = path.join(DATA_DIR, "merchants.local.json");
   const all = JSON.parse(readFileSync(file, "utf8")) as Record<string, Record<MerchantField, string>>;
   const values = all[ensName];
   if (!values) throw new Error(`${ensName} not found in data/merchants.local.json`);
