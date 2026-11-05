@@ -19,13 +19,14 @@ export type ScheduledRefund = {
 };
 
 /**
- * Schedule a USDC transfer from the treasury back to the payer. Executes
- * immediately when the operator's signature is enough (operator == treasury);
- * otherwise it waits for the treasury's signature, visible on HashScan.
+ * Schedule a USDC transfer from the account that received the payment (the
+ * merchant's deposit account, or the shared treasury for older merchants)
+ * back to the payer. Deposit accounts are keyed to the operator, so their
+ * refunds execute at once; a separate treasury countersigns if we hold its key.
  */
-export async function createScheduledRefund(payerAccount: string, usdcAmountAtomic: string, memo: string): Promise<ScheduledRefund> {
+export async function createScheduledRefund(payerAccount: string, usdcAmountAtomic: string, memo: string, fromAccount?: string): Promise<ScheduledRefund> {
   const client = operatorClient();
-  const treasury = treasuryAccountId();
+  const treasury = fromAccount ?? treasuryAccountId();
   const token = usdcTokenId();
 
   const transfer = new TransferTransaction()
@@ -43,7 +44,7 @@ export async function createScheduledRefund(payerAccount: string, usdcAmountAtom
 
   // If the treasury is a separate account and we hold its key, countersign so
   // the refund executes right away instead of waiting for a human.
-  if (treasury !== operatorAccountId() && hasEnv("TREASURY_PRIVATE_KEY")) {
+  if (treasury === treasuryAccountId() && treasury !== operatorAccountId() && hasEnv("TREASURY_PRIVATE_KEY")) {
     const key = PrivateKey.fromStringECDSA(env("TREASURY_PRIVATE_KEY"));
     const treasuryClient = Client.forTestnet().setOperator(treasury, key);
     try {

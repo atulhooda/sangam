@@ -4,7 +4,7 @@ import { withX402 } from "@x402/next";
 import { createMerchantServer } from "@sangam/hedera";
 import { MOCK_PROVIDER, confirm, init, type Line } from "@sangam/ondc";
 import { env, formatUsdc, inrPerUsd, paiseToUsdcAtomic, type OndcOrderInfo, type SettlementNotice } from "@sangam/shared";
-import { sangamApiUrl } from "@/lib/server/merchant";
+import { notifySangam, ondcGatewayName } from "@/lib/server/merchant";
 import { ondcMerchantName, parseLine, quoteFor, releaseQuote, sellerApp } from "@/lib/server/ondc";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +50,8 @@ const paid = withX402(
       network: "hedera:testnet",
       // ONDC: the buyer app collects the payment, so the USDC goes to Sangam's treasury.
       payTo: () => env("TREASURY_ACCOUNT_ID"),
+      // Lets buyer agents check the payee against ENS before paying.
+      extra: { ensName: ondcGatewayName() },
       price: async (ctx) => {
         const params = new URLSearchParams();
         for (const k of ["provider", "item", "qty"]) {
@@ -124,17 +126,7 @@ export async function GET(req: NextRequest) {
     quotedInrPaise: step.quotePaise,
     ondc,
   };
-  try {
-    const r = await fetch(`${sangamApiUrl()}/api/settlements`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-sangam-key": env("SETTLEMENT_SHARED_SECRET") },
-      body: JSON.stringify(notice),
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (!r.ok) console.error(`[ondc] Sangam rejected the notice: ${r.status} ${await r.text()}`);
-  } catch (err) {
-    console.error(`[ondc] could not notify Sangam: ${(err as Error).message}`);
-  }
+  await notifySangam(notice, "ondc");
 
   const out = NextResponse.json({ ondc, merchant: notice.merchant, hederaTxId: settle.transaction }, { status: ondc.state === "Accepted" ? 200 : 202 });
   out.headers.set("PAYMENT-RESPONSE", settleHeader);
