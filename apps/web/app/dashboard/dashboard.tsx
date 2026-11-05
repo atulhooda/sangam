@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { EnsView, Invoice, Quote, Settlement, Stats } from "@/lib/types";
+import type { EnsView, Invoice, Quote, ReceiptChain, Settlement, Stats } from "@/lib/types";
 import { ThemeToggle } from "../components/theme-toggle";
-import { clock, hashscanTopic, hashscanTx, isInFlight, isSimTx, rupees, shortId, shortTx, timeAgo, usdc } from "./format";
+import { clock, hashscanSchedule, hashscanTopic, hashscanTx, isInFlight, isSimTx, rupees, shortHash, shortId, shortTx, timeAgo, usdc } from "./format";
 
 /* ───────────────────────── data ───────────────────────── */
 
@@ -147,6 +147,9 @@ function Header({ lastOk, error, now }: { lastOk: number | null; error: boolean;
             {error ? "API unreachable" : fresh ? "Live" : "Connecting…"}
           </span>
           <ThemeToggle />
+          <a href="/verify" className="hidden rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent hover:text-ink sm:block">
+            Identity desk
+          </a>
           <a href="/" className="hidden rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent hover:text-ink sm:block">
             ← Home
           </a>
@@ -449,6 +452,22 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
             v={<span className="text-xs text-muted">{isSimTx(s.hederaTxId) ? "simulated" : s.chainVerified ? "Mirror Node ✓" : s.status === "received" ? "—" : "skipped"}</span>}
           />
           <LedgerRow k="Payer" v={<span className="mono text-xs">{s.payer ?? "—"}</span>} />
+          {s.refund && (
+            <LedgerRow
+              k="Scheduled refund"
+              v={
+                <a
+                  className="mono text-xs text-warn underline-offset-2 hover:underline"
+                  href={hashscanSchedule(s.refund.scheduleId)}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="USDC back to the payer once the treasury's signature lands"
+                >
+                  {s.refund.scheduleId} · {usdc(s.refund.amountAtomic)} USDC ↗
+                </a>
+              }
+            />
+          )}
           <LedgerRow k="UPI payout ref" v={<span className="mono text-xs" title={s.payoutRef ?? ""}>{s.payoutRef ?? "—"}</span>} />
           {s.ondc && (
             <>
@@ -538,6 +557,24 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
     <Card>
       <CardHead title="Send a payment" hint="An agent pays tickets.sangam.eth. Watch it settle." />
       <div className="space-y-2.5 p-5">
+        {stats?.budget && (
+          <div className="rounded-xl border border-line bg-surface2 px-4 py-3" title="CUSTOMER_TOTAL_BUDGET: the agent's cumulative USDC cap">
+            <div className="flex items-baseline justify-between gap-3 text-xs">
+              <span className="text-muted">Agent budget left</span>
+              <span className="tabular-nums font-medium">
+                {usdc(stats.budget.remainingAtomic, 2)} <span className="text-muted">of {usdc(stats.budget.limitAtomic, 2)} USDC</span>
+              </span>
+            </div>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-line">
+              <div
+                className="h-full rounded-full bg-accent transition-[width] duration-500"
+                style={{
+                  width: `${Math.min(100, (Number(stats.budget.remainingAtomic) / Math.max(1, Number(stats.budget.limitAtomic))) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
         <button
           onClick={() => payAsAgent("ticket")}
           disabled={busy !== null || !canPay}
@@ -655,7 +692,15 @@ function ExtLink({ href, children }: { href: string; children: React.ReactNode }
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
-function MerchantCard({ quote, ens }: { quote: Quote | null; ens: EnsView | { error: string } | null }) {
+function MerchantCard({
+  quote,
+  ens,
+  verified,
+}: {
+  quote: Quote | null;
+  ens: EnsView | { error: string } | null;
+  verified: boolean;
+}) {
   const view = ens && !("error" in ens) ? ens : null;
   return (
     <Card>
@@ -664,13 +709,20 @@ function MerchantCard({ quote, ens }: { quote: Quote | null; ens: EnsView | { er
         hint={view?.source === "ens" ? "Read live from ENSv2 on Sepolia" : "Found by ENS name"}
         right={
           view ? (
-            view.source === "ens" ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-okbg px-2 py-0.5 text-[11px] font-medium text-ok">
-                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-ok" /> live
-              </span>
-            ) : (
-              <MockTag>ENS offline</MockTag>
-            )
+            <div className="flex items-center gap-1.5">
+              {verified && (
+                <span className="rounded-full bg-okbg px-2 py-0.5 text-[11px] font-medium text-ok" title="Verified with the Self offchain SDK via Aadhaar">
+                  Aadhaar ✓
+                </span>
+              )}
+              {view.source === "ens" ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-okbg px-2 py-0.5 text-[11px] font-medium text-ok">
+                  <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-ok" /> live
+                </span>
+              ) : (
+                <MockTag>ENS offline</MockTag>
+              )}
+            </div>
           ) : null
         }
       />
@@ -720,6 +772,63 @@ function MerchantCard({ quote, ens }: { quote: Quote | null; ens: EnsView | { er
         ) : (
           <p className="py-4 text-sm text-muted">Loading…</p>
         )}
+      </div>
+    </Card>
+  );
+}
+
+/* ───────────────────────── receipt chain ───────────────────────── */
+
+function ReceiptChainCard() {
+  const [chain, setChain] = useState<ReceiptChain | null>(null);
+  useEffect(() => {
+    const load = () =>
+      fetch("/api/receipts", { cache: "no-store" })
+        .then((r) => r.json() as Promise<ReceiptChain>)
+        .then(setChain)
+        .catch(() => undefined);
+    load();
+    const t = setInterval(load, 10_000); // the mirror node lags a few seconds; no point polling faster
+    return () => clearInterval(t);
+  }, []);
+
+  if (!chain?.enabled) return null;
+  const pill = chain.error ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-badbg px-2.5 py-0.5 text-xs font-medium text-bad">✕ {chain.error}</span>
+  ) : chain.lagging ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-infobg px-2.5 py-0.5 text-xs font-medium text-info">
+      <Spinner /> Latest receipts propagating
+    </span>
+  ) : chain.intact ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-okbg px-2.5 py-0.5 text-xs font-medium text-ok">✓ Chain intact</span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-badbg px-2.5 py-0.5 text-xs font-medium text-bad">✗ Broken at #{chain.brokenAtSeq}</span>
+  );
+
+  return (
+    <Card>
+      <CardHead title="Receipt chain" hint="Every HCS receipt links to the one before it — replayed from the Mirror Node, not our files." right={pill} />
+      <div className="px-5 py-3">
+        {chain.head ? (
+          <>
+            <LedgerRow
+              k="Topic"
+              v={
+                <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={hashscanTopic(chain.topicId)} target="_blank" rel="noreferrer">
+                  {chain.topicId} ↗
+                </a>
+              }
+            />
+            <LedgerRow k="Receipts" v={<span className="tabular-nums">#{chain.head.seq} of {chain.length}</span>} />
+            <LedgerRow k="Head hash" v={<span className="mono text-[10.5px]" title={chain.head.hash}>{shortHash(chain.head.hash)}</span>} />
+          </>
+        ) : (
+          <p className="py-3 text-sm text-muted">No receipts on the topic yet.</p>
+        )}
+        <p className="mt-2 text-[11px] leading-relaxed text-muted">
+          Each receipt carries the previous receipt's sha256, so dropping or reordering one breaks the chain — for
+          everyone, not just for us.
+        </p>
       </div>
     </Card>
   );
@@ -803,6 +912,22 @@ export function Dashboard() {
   const { settlements, stats, quote, ens, invoice, lastOk, error, refresh } = useDashboardData();
   const now = useNow();
   const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const [merchantVerified, setMerchantVerified] = useState(false);
+
+  // Whether the ENS merchant has an Aadhaar-verified identity (refreshed on settle).
+  useEffect(() => {
+    const load = () =>
+      fetch("/api/self/identities", { cache: "no-store" })
+        .then((r) => r.json() as Promise<{ role: string; label: string }[]>)
+        .then((rows) => {
+          const name = typeof ens === "object" && ens && !("error" in ens) ? ens.name : null;
+          setMerchantVerified(!!name && rows.some((i) => i.role === "merchant" && i.label.toLowerCase() === name.toLowerCase()));
+        })
+        .catch(() => undefined);
+    load();
+    const t = setInterval(load, 15_000);
+    return () => clearInterval(t);
+  }, [ens]);
 
   const rows = useMemo(() => settlements ?? [], [settlements]);
   const pinned = pinnedId ? rows.find((s) => s.id === pinnedId) : undefined;
@@ -846,8 +971,9 @@ export function Dashboard() {
                 refresh();
               }}
             />
+            <ReceiptChainCard />
             <InvoiceCard invoice={invoice} />
-            <MerchantCard quote={quote} ens={ens} />
+            <MerchantCard quote={quote} ens={ens} verified={merchantVerified} />
           </div>
         </div>
       </main>
