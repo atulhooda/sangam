@@ -16,6 +16,21 @@ const NoticeSchema = z.object({
   hederaTxId: z.string().min(1).refine((tx) => !isSimulatedTx(tx), "sim- transaction ids are reserved for /api/simulate"),
   payer: z.string().optional(),
   usdcAmount: z.string().regex(/^\d+$/),
+  quotedInrPaise: z.number().int().positive().optional(),
+  ondc: z
+    .object({
+      transactionId: z.string(),
+      orderId: z.string(),
+      state: z.string(),
+      bppId: z.string(),
+      bppUri: z.string().url(),
+      providerId: z.string(),
+      providerName: z.string(),
+      items: z.array(z.object({ id: z.string(), name: z.string(), count: z.number().int().positive() })),
+      quoteInrPaise: z.number().int().positive(),
+      sellerUpi: z.string().min(3),
+    })
+    .optional(),
 });
 
 function authorised(req: Request): boolean {

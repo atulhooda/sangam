@@ -450,6 +450,16 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
           />
           <LedgerRow k="Payer" v={<span className="mono text-xs">{s.payer ?? "—"}</span>} />
           <LedgerRow k="UPI payout ref" v={<span className="mono text-xs" title={s.payoutRef ?? ""}>{s.payoutRef ?? "—"}</span>} />
+          {s.ondc && (
+            <>
+              <LedgerRow k="ONDC order" v={<span className="mono text-xs" title={s.ondc.transactionId}>{s.ondc.orderId} · {s.ondc.state}</span>} />
+              <LedgerRow k="ONDC seller" v={<span className="text-xs" title={s.ondc.bppId}>{s.ondc.providerName}</span>} />
+              <LedgerRow
+                k="Items"
+                v={<span className="text-xs">{s.ondc.items.map((i) => i.name).join(", ")} · {rupees(s.ondc.quoteInrPaise)}</span>}
+              />
+            </>
+          )}
           <LedgerRow
             k="HCS receipt"
             v={
@@ -471,7 +481,7 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
 /* ───────────────────────── side cards ───────────────────────── */
 
 function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void }) {
-  const [busy, setBusy] = useState<"ok" | "short" | "agent" | null>(null);
+  const [busy, setBusy] = useState<"ok" | "short" | "agent" | "ondc" | null>(null);
   const [agentMsg, setAgentMsg] = useState<{ ok: boolean; text: string; href?: string } | null>(null);
   const canSim = stats?.actions.simulate ?? false;
   const canPay = stats?.actions.payAsAgent ?? false;
@@ -490,17 +500,32 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
     }
   }
 
-  async function payAsAgent() {
-    setBusy("agent");
+  async function payAsAgent(kind: "ticket" | "ondc") {
+    setBusy(kind === "ondc" ? "ondc" : "agent");
     setAgentMsg(null);
     try {
-      const res = await fetch("/api/pay", { method: "POST" });
-      const body = (await res.json()) as { error?: string; hederaTxId?: string; hashscan?: string; ticket?: { pnr: string }; settlement?: Settlement | null };
+      const res = await fetch("/api/pay", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(kind === "ondc" ? { kind, q: "atta", qty: 1 } : { kind }),
+      });
+      const body = (await res.json()) as {
+        error?: string;
+        hederaTxId?: string;
+        hashscan?: string;
+        bought?: string;
+        ticket?: { pnr: string };
+        result?: { ondc?: { orderId: string; state: string } };
+      };
       if (!res.ok || !body.hederaTxId) {
         setAgentMsg({ ok: false, text: body.error ?? `Failed (${res.status})` });
         return;
       }
-      setAgentMsg({ ok: true, text: `Paid ${shortTx(body.hederaTxId)} · PNR ${body.ticket?.pnr ?? "—"}`, href: body.hashscan });
+      const detail =
+        kind === "ondc"
+          ? `${body.bought} · ONDC order ${body.result?.ondc?.orderId ?? "—"} (${body.result?.ondc?.state ?? "?"})`
+          : `PNR ${body.ticket?.pnr ?? "—"}`;
+      setAgentMsg({ ok: true, text: `Paid ${shortTx(body.hederaTxId)} · ${detail}`, href: body.hashscan });
       onSent();
     } catch (err) {
       setAgentMsg({ ok: false, text: (err as Error).message });
@@ -514,7 +539,7 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
       <CardHead title="Send a payment" hint="An agent pays tickets.sangam.eth. Watch it settle." />
       <div className="space-y-2.5 p-5">
         <button
-          onClick={payAsAgent}
+          onClick={() => payAsAgent("ticket")}
           disabled={busy !== null || !canPay}
           title={canPay ? undefined : "Set CUSTOMER_ACCOUNT_ID and CUSTOMER_PRIVATE_KEY in .env"}
           className="flex w-full items-center justify-between rounded-xl bg-accent px-4 py-3 text-left font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#1a1917]"
@@ -526,6 +551,18 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
             </span>
           </span>
           {busy === "agent" ? <Spinner className="h-4 w-4" /> : <span aria-hidden>→</span>}
+        </button>
+        <button
+          onClick={() => payAsAgent("ondc")}
+          disabled={busy !== null || !canPay}
+          title={canPay ? undefined : "Set CUSTOMER_ACCOUNT_ID and CUSTOMER_PRIVATE_KEY in .env"}
+          className="flex w-full items-center justify-between rounded-xl border border-accent/50 bg-surface px-4 py-3 text-left font-medium transition-colors hover:border-accent disabled:opacity-60"
+        >
+          <span>
+            Buy on ONDC as agent
+            <span className="block text-xs font-normal text-muted">10 kg atta from an ONDC seller, ~₹460 in USDC</span>
+          </span>
+          {busy === "ondc" ? <Spinner className="h-4 w-4" /> : <span aria-hidden className="text-muted">→</span>}
         </button>
         {agentMsg && (
           <p className={`rounded-lg p-3 text-xs ${agentMsg.ok ? "bg-surface2 text-muted" : "bg-badbg text-bad"}`} role="status">
