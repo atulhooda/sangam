@@ -16,7 +16,8 @@
     "setup-0g": "tsx scripts/setup-0g.ts",
     "simulate": "tsx scripts/simulate-settlement.ts",
     "setup-ens": "tsx scripts/setup-ens.ts",
-    "add-merchant": "tsx scripts/add-merchant.ts"
+    "add-merchant": "tsx scripts/add-merchant.ts",
+    "register-parent": "tsx scripts/register-parent.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
