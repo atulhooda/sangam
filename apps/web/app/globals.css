@@ -3,55 +3,56 @@
 /* Dark mode is class-driven (html.dark) so the toggle can override the OS setting */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Sangam palette — warm cream/orange */
-@theme {
-  --color-bg: #f7f5f0;
-  --color-surface: #ffffff;
-  --color-surface2: #faf8f4;
-  --color-ink: #1c1b19;
-  --color-muted: #6b6760;
-  --color-line: #e4e0d8;
-  --color-accent: #b5541c;
-  --color-accentbg: #fbeee5;
-  --color-ok: #1f7a4d;
-  --color-okbg: #e3f2ea;
-  --color-warn: #8a5a00;
-  --color-warnbg: #fbefd5;
-  --color-bad: #a3271f;
-  --color-badbg: #f8e1df;
-  --color-info: #3d5a80;
-  --color-infobg: #e3eaf3;
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* Dark tokens applied when html carries the .dark class */
-html.dark {
-  --color-bg: #151412;
-  --color-surface: #1e1d1a;
-  --color-surface2: #24221f;
-  --color-ink: #ece9e2;
-  --color-muted: #a19c93;
-  --color-line: #33312c;
-  --color-accent: #e98a4f;
-  --color-accentbg: #3a2416;
+/* Sangam palette: deep space navy with indigo light (one dark theme, always on).
+   Every page styles itself through these tokens, so this block re-skins the app. */
+@theme {
+  --color-bg: #05060d;
+  --color-surface: #0c0e1c;
+  --color-surface2: #11132a;
+  --color-ink: #e6e9f5;
+  --color-muted: #8a8fa8;
+  --color-line: #1e2140;
+  --color-accent: #a5b4fc;
+  --color-accentbg: #1c1d4a;
   --color-ok: #6fd3a0;
-  --color-okbg: #173226;
+  --color-okbg: #0f2a20;
   --color-warn: #f0c062;
-  --color-warnbg: #3a2e12;
+  --color-warnbg: #2a2310;
   --color-bad: #f08a80;
-  --color-badbg: #3b1a17;
-  --color-info: #9bb8e0;
-  --color-infobg: #1c2836;
+  --color-badbg: #2c1416;
+  --color-info: #93b4fd;
+  --color-infobg: #121c3a;
+  --color-indigo: #6366f1;
+  --color-indigo-deep: #4f46e5;
+
+  --animate-fade-up: fade-up 0.45s ease-out both;
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-glow: glow 3s ease-in-out infinite;
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  @keyframes glow {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+  }
 }
 
 html {
-  color-scheme: light;
+  color-scheme: dark;
   scroll-behavior: smooth;
   /* Paint the root itself, so any overscroll edge is page-coloured, never white */
   background: var(--color-bg);
-}
-
-html.dark {
-  color-scheme: dark;
 }
 
 /* No sideways scrolling, and no rubber-band bounce past the page edges
@@ -66,12 +67,47 @@ body {
   min-height: 100vh;
   background: var(--color-bg);
   color: var(--color-ink);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
+}
+
+/* ── Space look shared by the app pages ── */
+
+/* Floating glass pill used as the sticky top bar on every desk.
+   The header is the sticky box; its inner row (already width-capped) is the pill. */
+.space-bar {
+  padding: 0 12px;
+}
+.space-bar > div {
+  border-radius: 9999px;
+  padding-block: 8px;
+  padding-left: 20px;
+  padding-right: 8px;
+  background: rgb(13 14 26 / 0.72);
+  box-shadow: 0 10px 40px -12px rgb(0 0 0 / 0.6), inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+
+/* Glass panel with depth: light from above, long shadow below */
+.glass-3d {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.055), rgb(255 255 255 / 0.02));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 30px 60px -30px rgb(0 0 0 / 0.85),
+    0 18px 50px -30px rgb(79 70 229 / 0.45);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+/* Primary buttons glow like Oryn's pills */
+.bg-accent {
+  box-shadow: 0 8px 30px -10px rgb(129 140 248 / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.6);
 }
 
 /* Keyboard focus: a clear accent ring on anything focusable (mouse clicks don't show it) */
