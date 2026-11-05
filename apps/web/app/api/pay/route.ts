@@ -1,8 +1,9 @@
-import { resolveMerchant } from "@sangam/ens";
+import { UntrustedPayeeError, assertVerifiedPayee, resolveMerchant } from "@sangam/ens";
 import { createPayingFetch, hashscanTxUrl } from "@sangam/hedera";
 import { assertBudgetAllows, BudgetExceededError, budgetSnapshot, recordBudgetSpend } from "@/lib/server/budget";
 import { merchantEnsName } from "@/lib/server/merchant";
 import { canPayAsAgent } from "@/lib/server/pipeline";
+import { currentUser } from "@/lib/server/session";
 import { findByTx } from "@/lib/server/store";
 import type { Invoice } from "@/lib/types";
 
@@ -17,17 +18,30 @@ export const maxDuration = 60;
  *   { kind: "ticket" }  finds tickets.sangam.eth on ENS and buys a rail ticket
  *   { kind: "ondc", q: "atta", qty: 1 }  searches ONDC through Sangam and
  *                                        buys the first match
+ *   { kind: "scam" }    tries a fake IRCTC site that impersonates
+ *                       tickets.sangam.eth: the agent must refuse it
+ *
+ * The agent only pays verified Sangam merchants: before signing, every
+ * invoice is checked against the merchant's ENS record (assertVerifiedPayee).
  */
 export async function POST(req: Request) {
+  // The agent spends real (testnet) USDC: only a Self-verified buyer may start it.
+  const me = await currentUser();
+  if (!me || me.session.role !== "user") {
+    return Response.json({ error: "Sign in as a buyer with Self to pay as the agent.", signIn: "/verify?role=user" }, { status: 401 });
+  }
   if (!canPayAsAgent()) {
     return Response.json({ error: "Set CUSTOMER_ACCOUNT_ID, CUSTOMER_PRIVATE_KEY and SETTLEMENT_SHARED_SECRET in .env" }, { status: 412 });
   }
-  const body = (await req.json().catch(() => ({}))) as { kind?: "ticket" | "ondc"; q?: string; qty?: number };
+  const body = (await req.json().catch(() => ({}))) as { kind?: "ticket" | "ondc" | "scam"; q?: string; qty?: number };
   const origin = new URL(req.url).origin;
 
   let url: URL;
   let what: string;
-  if (body.kind === "ondc") {
+  if (body.kind === "scam") {
+    url = new URL(`${origin}/demo/fake-irctc?from=CSMT&to=PUNE`);
+    what = "a ticket from a fake IRCTC site";
+  } else if (body.kind === "ondc") {
     const res = await fetch(`${origin}/merchant/ondc/catalog?q=${encodeURIComponent(body.q ?? "atta")}`, { cache: "no-store" });
     const catalog = (await res.json()) as { results?: { name: string; orderUrl: string }[]; error?: string };
     const hit = catalog.results?.[0];
@@ -53,7 +67,7 @@ export async function POST(req: Request) {
     if (!priceAtomic) throw new Error("merchant returned no payment options");
     await assertBudgetAllows(BigInt(priceAtomic));
 
-    const { buy } = createPayingFetch();
+    const { buy } = createPayingFetch({ guard: assertVerifiedPayee });
     const purchase = await buy<Record<string, unknown>>(url);
     if (purchase.status >= 400 || !purchase.settle?.success) {
       return Response.json({ error: `merchant answered ${purchase.status}`, detail: purchase.body }, { status: 502 });
@@ -72,6 +86,10 @@ export async function POST(req: Request) {
       settlement: findByTx(tx) ?? null,
     });
   } catch (err) {
+    if (err instanceof UntrustedPayeeError) {
+      // Nothing was signed or paid.
+      return Response.json({ refused: true, kind: body.kind ?? "ticket", reason: err.reason, error: err.message, target: url.toString() }, { status: 403 });
+    }
     if (err instanceof BudgetExceededError) {
       return Response.json(
         {

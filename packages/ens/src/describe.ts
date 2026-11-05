@@ -1,6 +1,6 @@
 import { flag, type EnsView } from "@sangam/shared";
 import { resolveMerchant } from "./resolve.ts";
-import { MERCHANT_FIELDS, MERCHANT_TEXT_KEYS } from "./records.ts";
+import { MERCHANT_FIELDS, MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY } from "./records.ts";
 import { parentName } from "./wallet.ts";
 
 
@@ -15,7 +15,11 @@ export async function describeMerchant(name: string): Promise<EnsView> {
     name,
     parent: parentName(),
     source: flag("ENS_OFFLINE") ? "offline" : "ens",
-    records: MERCHANT_FIELDS.map((f) => ({ key: MERCHANT_TEXT_KEYS[f], value: String(m[f]) })),
+    records: [
+      ...MERCHANT_FIELDS.map((f) => ({ key: MERCHANT_TEXT_KEYS[f], value: String(m[f]) })),
+      // What buyer agents check before paying: missing means unverified.
+      { key: STATUS_TEXT_KEY, value: m.status ?? "(not set: agents won't pay)" },
+    ],
     registry,
     resolver,
     links: {

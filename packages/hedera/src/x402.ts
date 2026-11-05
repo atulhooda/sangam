@@ -1,7 +1,7 @@
 import { x402Client } from "@x402/core/client";
 import { decodePaymentRequiredHeader } from "@x402/core/http";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
-import type { SettleResponse } from "@x402/core/types";
+import type { PaymentRequirements, SettleResponse } from "@x402/core/types";
 import { wrapFetchWithPayment, x402HTTPClient } from "@x402/fetch";
 import { PrivateKey, createClientHederaSigner } from "@x402/hedera";
 import { ExactHederaScheme as ExactHederaClientScheme } from "@x402/hedera/exact/client";
@@ -55,13 +55,21 @@ export type AgentPurchase<T> = {
   /** Atomic USDC the 402 asked for. */
   price: string;
   settle: SettleResponse | null;
+  /** What the guard returned for this invoice (e.g. the verified ENS merchant). */
+  payee?: unknown;
 };
+
+/**
+ * Runs on the merchant's invoice before anything is signed. Throw to refuse
+ * the payment (e.g. assertVerifiedPayee from @sangam/ens).
+ */
+export type PaymentGuard = (invoice: PaymentRequirements) => Promise<unknown>;
 
 /**
  * A buyer agent: given the CUSTOMER_* key, pay any x402 endpoint on Hedera
  * with no human in the loop. `maxPerPayment` is a hard cap the SDK enforces.
  */
-export function createPayingFetch(opts: { accountId?: string; privateKey?: string; maxPerPayment?: string } = {}) {
+export function createPayingFetch(opts: { accountId?: string; privateKey?: string; maxPerPayment?: string; guard?: PaymentGuard } = {}) {
   const signer = createClientHederaSigner(
     opts.accountId ?? env("CUSTOMER_ACCOUNT_ID"),
     PrivateKey.fromStringECDSA(opts.privateKey ?? env("CUSTOMER_PRIVATE_KEY")),
@@ -81,6 +89,8 @@ export function createPayingFetch(opts: { accountId?: string; privateKey?: strin
     if (probe.status !== 402 || !header) throw new Error(`expected 402 from merchant, got ${probe.status}`);
     const quote = decodePaymentRequiredHeader(header).accepts[0];
     if (!quote) throw new Error("merchant returned no payment options");
+    // Refuse before signing: nothing has been paid if the guard throws.
+    const payee = opts.guard ? await opts.guard(quote) : undefined;
 
     const res = await payingFetch(url, { cache: "no-store" });
     const body = (await res.json().catch(() => null)) as T;
@@ -90,7 +100,7 @@ export function createPayingFetch(opts: { accountId?: string; privateKey?: strin
     } catch {
       /* no PAYMENT-RESPONSE header: the payment didn't go through */
     }
-    return { status: res.status, body, price: quote.amount, settle };
+    return { status: res.status, body, price: quote.amount, settle, payee };
   }
 
   return { buy };
