@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Me, Settlement } from "@/lib/types";
 import { Card, CardHead, MockTag, Spinner, StatusPill, idBadge } from "../components/ui";
-import { ThemeToggle } from "../components/theme-toggle";
+import { Logo } from "../components/space/kit";
 import { AccountMenu } from "../components/account-menu";
 import { clock, hashscanTopic, hashscanTx, isSimTx, rupees, timeAgo, usdc } from "../dashboard/format";
 
@@ -169,16 +169,15 @@ export function BuyerDesk({ me }: { me: Me }) {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-line bg-bg/80 backdrop-blur-md">
+      <header className="space-bar sticky top-3 z-40">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-5 py-3.5">
           <div className="flex items-center gap-3">
-            <a href="/" className="text-lg font-bold tracking-tight text-accent">sangam</a>
+            <a href="/" aria-label="Sangam home"><Logo /></a>
             <span className="text-line">/</span>
             <span className="text-sm font-medium">Buyer desk</span>
           </div>
           <div className="flex items-center gap-3">
-            <ThemeToggle />
-            <a href="/dashboard" className="hidden rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent hover:text-ink sm:block">
+            <a href="/dashboard" className="hidden rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent hover:text-ink sm:block">
               Settlement desk →
             </a>
             <AccountMenu me={me} />
@@ -189,7 +188,7 @@ export function BuyerDesk({ me }: { me: Me }) {
       <main className="mx-auto max-w-5xl space-y-5 px-5 py-6 sm:py-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="display text-xl font-semibold tracking-tight sm:text-2xl">Your shopping agent</h1>
+            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Your shopping agent</h1>
             <p className="mt-1 text-sm text-muted">It pays merchants in USDC on Hedera, with no approval step. They get rupees on UPI.</p>
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-okbg px-3 py-1 text-xs font-medium text-ok" title={`Verified via Self${me.name ? ` — ${me.name}` : ""}`}>
@@ -227,7 +226,7 @@ export function BuyerDesk({ me }: { me: Me }) {
               <button
                 onClick={connect}
                 disabled={busy !== null}
-                className="shrink-0 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0e0d13]"
+                className="shrink-0 rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0b0d1a]"
               >
                 {busy === "connect" ? "Creating account…" : "Connect agent wallet"}
               </button>
@@ -286,7 +285,7 @@ export function BuyerDesk({ me }: { me: Me }) {
                     checked={picked.has(m.ensName) && !!m.verified}
                     disabled={!m.verified || running}
                     onChange={() => toggle(m.ensName)}
-                    className="h-4 w-4 accent-[var(--color-accent,#6d4aff)]"
+                    className="h-4 w-4 accent-[var(--color-accent,#b5541c)]"
                   />
                   <div className="min-w-0 flex-1">
                     <p className="mono truncate text-sm font-medium">{m.ensName}</p>
@@ -312,7 +311,7 @@ export function BuyerDesk({ me }: { me: Me }) {
                       <button
                         onClick={() => runAgent([m.ensName])}
                         disabled={!w || running || !m.verified}
-                        className="rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-medium transition-colors hover:border-accent disabled:opacity-50"
+                        className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-medium transition-colors hover:border-accent disabled:opacity-50"
                       >
                         Buy
                       </button>
@@ -329,7 +328,7 @@ export function BuyerDesk({ me }: { me: Me }) {
             <button
               onClick={() => runAgent(pickedList)}
               disabled={!w || running || pickedList.length === 0}
-              className="rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0e0d13]"
+              className="rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0b0d1a]"
             >
               {running ? "Agent is paying…" : `3 · Run agent on ${pickedList.length} merchant${pickedList.length === 1 ? "" : "s"} →`}
             </button>

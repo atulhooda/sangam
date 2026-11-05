@@ -3,14 +3,14 @@ import type { ReactNode } from "react";
 /* Dark "terminal" frame, used for what the agent sees (steps 1–3). */
 function Terminal({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-[#2e2d3a] bg-[#0e0d13] shadow-sm">
-      <div className="flex items-center gap-1.5 border-b border-[#2e2d3a] px-3 py-2">
-        <span className="h-2 w-2 rounded-full bg-[#e06456]" />
+    <div className="overflow-hidden rounded-xl border border-[#23264a] bg-[#0b0d1a] shadow-sm">
+      <div className="flex items-center gap-1.5 border-b border-[#23264a] px-3 py-2">
+        <span className="h-2 w-2 rounded-full bg-[#f08a80]" />
         <span className="h-2 w-2 rounded-full bg-[#f0c062]" />
-        <span className="h-2 w-2 rounded-full bg-[#35c135]" />
-        <span className="mono ml-2 text-[10px] text-[#a4a3af]">{title}</span>
+        <span className="h-2 w-2 rounded-full bg-[#6fd3a0]" />
+        <span className="mono ml-2 text-[10px] text-[#8a8fa8]">{title}</span>
       </div>
-      <pre className="mono overflow-x-auto p-4 text-[11.5px] leading-relaxed text-[#efeff4]">
+      <pre className="mono overflow-x-auto p-4 text-[11.5px] leading-relaxed text-[#e6e9f5]">
         {children}
       </pre>
     </div>
@@ -37,11 +37,11 @@ function Row({ k, v, tone }: { k: string; v: ReactNode; tone?: "ok" | "accent" |
   );
 }
 
-const K = ({ children }: { children: ReactNode }) => <span className="text-[#a4a3af]">{children}</span>;
-const B = ({ children }: { children: ReactNode }) => <span className="text-[#3987e5]">{children}</span>;
+const K = ({ children }: { children: ReactNode }) => <span className="text-[#8a8fa8]">{children}</span>;
+const B = ({ children }: { children: ReactNode }) => <span className="text-[#9bb8e0]">{children}</span>;
 const Y = ({ children }: { children: ReactNode }) => <span className="text-[#f0c062]">{children}</span>;
-const G = ({ children }: { children: ReactNode }) => <span className="text-[#35c135]">{children}</span>;
-const O = ({ children }: { children: ReactNode }) => <span className="text-[#977dff]">{children}</span>;
+const G = ({ children }: { children: ReactNode }) => <span className="text-[#6fd3a0]">{children}</span>;
+const O = ({ children }: { children: ReactNode }) => <span className="text-[#a5b4fc]">{children}</span>;
 
 const STEPS: {
   title: string;
@@ -123,14 +123,14 @@ const STEPS: {
 
 export function FiveSteps() {
   return (
-    <section id="how" className="border-y border-line bg-surface2/70 py-20">
+    <section id="how" className="relative border-y border-white/5 bg-white/[0.015] py-20">
       <div className="mx-auto max-w-6xl px-5">
         {/* Header */}
         <div className="mx-auto mb-14 max-w-2xl text-center">
           <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
             How it works
           </p>
-          <h2 className="display text-balance text-3xl font-semibold tracking-tight sm:text-5xl">
+          <h2 className="text-balance text-3xl font-medium tracking-[-0.035em] sm:text-5xl">
             One payment, five steps.
           </h2>
           <p className="mt-4 text-balance text-muted">
@@ -174,7 +174,7 @@ export function FiveSteps() {
                   className="step-ripple absolute inset-0 rounded-full bg-accent"
                   style={{ animationDelay: `${i * 1.2}s` }}
                 />
-                <span className="relative flex h-8 w-8 items-center justify-center rounded-full border-4 border-surface2 bg-accent text-sm font-bold text-white">
+                <span className="relative flex h-8 w-8 items-center justify-center rounded-full border-4 border-surface2 bg-accent text-sm font-bold text-[#0b0b14]">
                   {i + 1}
                 </span>
               </span>

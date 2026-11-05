@@ -49,7 +49,7 @@ export function AccountMenu({ me: initial }: { me?: Me | null }) {
 
   if (!me) {
     return (
-      <a href="/verify" className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 dark:text-[#0e0d13]">
+      <a href="/verify" className="rounded-full bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 dark:text-[#0b0d1a]">
         Sign in
       </a>
     );
@@ -61,7 +61,7 @@ export function AccountMenu({ me: initial }: { me?: Me | null }) {
     <div className="flex items-center gap-2">
       <a
         href={me.home}
-        className="flex max-w-[220px] items-center gap-2 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm transition-colors hover:border-accent"
+        className="flex max-w-[220px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-sm transition-colors hover:border-accent"
         title={`Signed in with Self as ${me.role === "merchant" ? `merchant ${me.label}` : "a buyer"}`}
       >
         <span className="truncate">{who}</span>
@@ -73,7 +73,7 @@ export function AccountMenu({ me: initial }: { me?: Me | null }) {
           onClick={() => switchTo(me.switchTo!)}
           disabled={busy !== null}
           title={`You've also verified as a ${me.switchTo === "merchant" ? "merchant" : "buyer"} in this browser: no new scan needed`}
-          className="hidden rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent hover:text-ink disabled:opacity-60 sm:block"
+          className="hidden rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent hover:text-ink disabled:opacity-60 sm:block"
         >
           {busy === "switch" ? "Switching…" : `Switch to ${me.switchTo === "merchant" ? "merchant" : "buyer"}`}
         </button>
@@ -81,7 +81,7 @@ export function AccountMenu({ me: initial }: { me?: Me | null }) {
       <button
         onClick={signOut}
         disabled={busy !== null}
-        className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-muted transition-colors hover:border-bad hover:text-bad disabled:opacity-60"
+        className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-sm text-muted transition-colors hover:border-bad hover:text-bad disabled:opacity-60"
       >
         {busy === "out" ? "Signing out…" : "Sign out"}
       </button>
