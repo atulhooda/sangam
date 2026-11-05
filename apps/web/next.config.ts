@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
-// The API now lives in this app (app/api/*), so there are no proxy rewrites
-// to the old Express servers any more.
-const nextConfig: NextConfig = {};
+const nextConfig: NextConfig = {
+  // The Hedera SDK (gRPC) and the 0G SDK need plain Node.js require, not bundling.
+  serverExternalPackages: ["@hiero-ledger/sdk", "@0gfoundation/0g-compute-ts-sdk"],
+};
 
 export default nextConfig;
