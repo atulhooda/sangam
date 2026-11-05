@@ -6,6 +6,7 @@ import type { SelfApp } from "@selfxyz/qrcode";
 import { SelfQRcodeWrapper } from "@selfxyz/qrcode/components/SelfQRcode";
 import { Card, CardHead, LedgerRow, idBadge } from "../components/ui";
 import { ThemeToggle } from "../components/theme-toggle";
+import { SELF_SCOPE, selfEndpoint, selfMock } from "@/lib/self-config";
 
 /*
  * Sign-in, Sangam-style. Three screens:
@@ -21,9 +22,9 @@ import { ThemeToggle } from "../components/theme-toggle";
  * Returning users are recognised by the identifier in this browser and sent
  * straight to their desk from screen 1.
  *
- * Mock mode (SELF_MOCK, default true) uses Self's test documents, so this
- * works before any real deployment. For a real phone to reach the endpoint
- * it must be publicly reachable — deploy, or expose 5173 through a tunnel.
+ * Mock mode (NEXT_PUBLIC_SELF_MOCK, default true) uses Self's test documents,
+ * so this works before any real deployment. Live mode (false) needs the
+ * endpoint publicly reachable over https — see lib/self-config.ts.
  */
 
 const LOCALSTORAGE_KEY = "sangam.self.userId";
@@ -98,13 +99,13 @@ export default function VerifyPage() {
     setFailed(null);
     setVerified(null);
     try {
-      const endpoint = `${window.location.origin}/api/self/verify`;
       const app = new SelfAppBuilder({
         version: 2,
         appName: "Sangam",
-        scope: "sangam",
-        endpoint,
-        endpointType: "staging_https", // offchain: proofs verify at our endpoint
+        scope: SELF_SCOPE,
+        endpoint: selfEndpoint(window.location.origin),
+        // Offchain: proofs verify at our endpoint. Must match the server's mock flag.
+        endpointType: selfMock() ? "staging_https" : "https",
         userId,
         userIdType: "uuid",
         userDefinedData: JSON.stringify({ role, label: role === "merchant" ? label.trim() : "" }),

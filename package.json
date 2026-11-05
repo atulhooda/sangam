@@ -15,6 +15,8 @@
     "dev": "npm --workspace @sangam/web run dev",
     "web": "npm --workspace @sangam/web run dev",
     "web:build": "npm --workspace @sangam/web run build",
+    "build": "npm run web:build",
+    "start": "npm --workspace @sangam/web run start",
     "gen-keys": "tsx scripts/gen-keys.ts",
     "setup-hedera": "tsx scripts/setup-hedera.ts",
     "create-topic": "tsx scripts/create-hcs-topic.ts",
