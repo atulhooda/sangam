@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { EnsView, Invoice, Quote, ReceiptChain, Settlement, Stats } from "@/lib/types";
 import { Card, CardHead, LedgerRow, MockTag, Spinner, StatusPill } from "../components/ui";
 import { ThemeToggle } from "../components/theme-toggle";
+import { AccountMenu } from "../components/account-menu";
 import { clock, hashscanSchedule, hashscanTopic, hashscanTx, isInFlight, isSimTx, rupees, shortHash, shortId, shortTx, timeAgo, usdc } from "./format";
 
 /* ───────────────────────── data ───────────────────────── */
@@ -94,12 +95,10 @@ function Header({ lastOk, error, now }: { lastOk: number | null; error: boolean;
             {error ? "API unreachable" : fresh ? "Live" : "Connecting…"}
           </span>
           <ThemeToggle />
-          <a href="/verify" className="hidden rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent hover:text-ink sm:block">
-            Identity desk
-          </a>
           <a href="/" className="hidden rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent hover:text-ink sm:block">
             ← Home
           </a>
+          <AccountMenu />
         </div>
       </div>
     </header>
@@ -438,8 +437,8 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
 /* ───────────────────────── side cards ───────────────────────── */
 
 function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void }) {
-  const [busy, setBusy] = useState<"ok" | "short" | "agent" | "ondc" | null>(null);
-  const [agentMsg, setAgentMsg] = useState<{ ok: boolean; text: string; href?: string } | null>(null);
+  const [busy, setBusy] = useState<"ok" | "short" | "agent" | "ondc" | "scam" | null>(null);
+  const [agentMsg, setAgentMsg] = useState<{ ok: boolean; text: string; href?: string; refused?: boolean } | null>(null);
   const canSim = stats?.actions.simulate ?? false;
   const canPay = stats?.actions.payAsAgent ?? false;
 
@@ -457,8 +456,8 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
     }
   }
 
-  async function payAsAgent(kind: "ticket" | "ondc") {
-    setBusy(kind === "ondc" ? "ondc" : "agent");
+  async function payAsAgent(kind: "ticket" | "ondc" | "scam") {
+    setBusy(kind === "ondc" ? "ondc" : kind === "scam" ? "scam" : "agent");
     setAgentMsg(null);
     try {
       const res = await fetch("/api/pay", {
@@ -467,6 +466,7 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
         body: JSON.stringify(kind === "ondc" ? { kind, q: "atta", qty: 1 } : { kind }),
       });
       const body = (await res.json()) as {
+        refused?: boolean;
         error?: string;
         hederaTxId?: string;
         hashscan?: string;
@@ -474,6 +474,15 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
         ticket?: { pnr: string };
         result?: { ondc?: { orderId: string; state: string } };
       };
+      if (body.refused) {
+        // The agent's verified-merchants-only check stopped the payment: the right outcome.
+        setAgentMsg({ ok: true, refused: true, text: `🛡️ Agent refused to pay, nothing was signed. ${body.error ?? ""}` });
+        return;
+      }
+      if (kind === "scam") {
+        setAgentMsg({ ok: false, text: body.error ?? `The scam site was not refused (${res.status})` });
+        return;
+      }
       if (!res.ok || !body.hederaTxId) {
         setAgentMsg({ ok: false, text: body.error ?? `Failed (${res.status})` });
         return;
@@ -539,8 +548,20 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
           </span>
           {busy === "ondc" ? <Spinner className="h-4 w-4" /> : <span aria-hidden className="text-muted">→</span>}
         </button>
+        <button
+          onClick={() => payAsAgent("scam")}
+          disabled={busy !== null || !canPay}
+          title="A fake IRCTC site that claims to be tickets.sangam.eth but asks to be paid elsewhere"
+          className="flex w-full items-center justify-between rounded-xl border border-bad/40 bg-surface px-4 py-3 text-left font-medium transition-colors hover:border-bad disabled:opacity-60"
+        >
+          <span>
+            Try a fake IRCTC site
+            <span className="block text-xs font-normal text-muted">Impersonates tickets.sangam.eth: the agent should refuse</span>
+          </span>
+          {busy === "scam" ? <Spinner className="h-4 w-4" /> : <span aria-hidden className="text-muted">🛡️</span>}
+        </button>
         {agentMsg && (
-          <p className={`rounded-lg p-3 text-xs ${agentMsg.ok ? "bg-surface2 text-muted" : "bg-badbg text-bad"}`} role="status">
+          <p className={`rounded-lg p-3 text-xs ${agentMsg.refused ? "bg-okbg text-ok" : agentMsg.ok ? "bg-surface2 text-muted" : "bg-badbg text-bad"}`} role="status">
             {agentMsg.text}
             {agentMsg.href && (
               <>
