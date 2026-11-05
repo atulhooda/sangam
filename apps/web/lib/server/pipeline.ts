@@ -255,5 +255,7 @@ export async function stats(): Promise<Stats> {
     mocks: m,
     actions: { simulate: canSimulate(), payAsAgent: canPayAsAgent() },
     budget: await budgetSnapshot(),
+    /** The buyer agent's Hedera account, so the buyer desk can show its purchases. */
+    customerAccountId: hasEnv("CUSTOMER_ACCOUNT_ID") ? process.env.CUSTOMER_ACCOUNT_ID! : null,
   };
 }
