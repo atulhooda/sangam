@@ -1,0 +1,18 @@
+{
+  "name": "@sangam/og",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "0G Compute: verifiable payout-or-hold decision for each settlement, plus the 0G ledger.",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@0gfoundation/0g-compute-ts-sdk": "^0.8.4",
+    "@sangam/shared": "*",
+    "ethers": "^6.13.0",
+    "openai": "4.104.0",
+    "zod": "^3.23.8"
+  }
+}
