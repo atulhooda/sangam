@@ -69,6 +69,7 @@ export async function acceptNotice(notice: SettlementNotice): Promise<Settlement
     hcsTopicId: null,
     quotedInrPaise: notice.quotedInrPaise ?? null,
     ondc: notice.ondc ?? null,
+    source: notice.source ?? "x402",
     status: "received",
     error: null,
     createdAt: now,
@@ -147,7 +148,8 @@ export async function runPipeline(start: Settlement): Promise<void> {
       s = await updateSettlement(s.id, { status: "held" });
       if (!simulated && !m.hcs && payer && hasEnv("OPERATOR_ACCOUNT_ID", "OPERATOR_PRIVATE_KEY", "TREASURY_ACCOUNT_ID")) {
         try {
-          const refund = await createScheduledRefund(payer, s.usdcAmount, `Sangam refund ${s.id}`);
+          // From the account that received it: the merchant's deposit account, or the shared treasury.
+          const refund = await createScheduledRefund(payer, s.usdcAmount, `Sangam refund ${s.id}`, merchant.hederaPayTo);
           s = await updateSettlement(s.id, { refund: { ...refund, createdAt: new Date().toISOString() } });
         } catch (err) {
           await updateSettlement(s.id, { error: `scheduled refund failed: ${(err as Error).message}` });
