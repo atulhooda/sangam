@@ -36,17 +36,17 @@ function AgentCard() {
         River one · USDC on Hedera
       </p>
       <h3 className="mb-4 text-xl font-semibold tracking-tight">An agent with money</h3>
-      <div className="overflow-hidden rounded-xl border border-[#2e2d3a] bg-[#0e0d13] shadow-sm">
-        <div className="flex items-center gap-1.5 border-b border-[#2e2d3a] px-3 py-2">
-          <span className="h-2 w-2 rounded-full bg-[#e06456]" />
+      <div className="overflow-hidden rounded-xl border border-[#23264a] bg-[#0b0d1a] shadow-sm">
+        <div className="flex items-center gap-1.5 border-b border-[#23264a] px-3 py-2">
+          <span className="h-2 w-2 rounded-full bg-[#f08a80]" />
           <span className="h-2 w-2 rounded-full bg-[#f0c062]" />
-          <span className="h-2 w-2 rounded-full bg-[#35c135]" />
-          <span className="mono ml-2 text-[10px] text-[#a4a3af]">customer-agent</span>
+          <span className="h-2 w-2 rounded-full bg-[#6fd3a0]" />
+          <span className="mono ml-2 text-[10px] text-[#8a8fa8]">customer-agent</span>
         </div>
-        <pre className="mono overflow-x-auto p-4 text-[11.5px] leading-relaxed text-[#efeff4]">
-          <span className="text-[#a4a3af]">wallet </span> 0.0.1001{"\n"}
-          <span className="text-[#a4a3af]">balance</span> <span className="text-[#3987e5]">42.50 USDC</span>{"\n\n"}
-          <span className="text-[#977dff]">→</span> GET /book?from=CSMT&amp;to=PUNE{"\n"}
+        <pre className="mono overflow-x-auto p-4 text-[11.5px] leading-relaxed text-[#e6e9f5]">
+          <span className="text-[#8a8fa8]">wallet </span> 0.0.1001{"\n"}
+          <span className="text-[#8a8fa8]">balance</span> <span className="text-[#9bb8e0]">42.50 USDC</span>{"\n\n"}
+          <span className="text-[#a5b4fc]">→</span> GET /book?from=CSMT&amp;to=PUNE{"\n"}
           <span className="text-[#f0c062]">← 402 Payment Required</span>
         </pre>
       </div>
@@ -137,7 +137,7 @@ export function TwoWorlds() {
         <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
           The problem
         </p>
-        <h2 className="display text-balance text-3xl font-semibold tracking-tight sm:text-5xl">
+        <h2 className="text-balance text-3xl font-medium tracking-[-0.035em] sm:text-5xl">
           Two worlds that can&apos;t pay each other.
         </h2>
         <p className="mt-4 text-muted">
@@ -148,7 +148,7 @@ export function TwoWorlds() {
       </div>
 
       {/* The confluence panel */}
-      <div className="dot-grid relative rounded-3xl border border-line bg-surface2 p-6 sm:p-10">
+      <div className="dot-grid relative glass-3d rounded-3xl p-6 sm:p-10">
         <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_auto_1fr] lg:gap-4">
           <AgentCard />
           <div className="hidden self-center lg:block">
@@ -192,7 +192,7 @@ export function TwoWorlds() {
           <ol className="space-y-5">
             {NEW_WAY.map((s, i) => (
               <li key={s.step} className="flex gap-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-white">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-[#0b0b14]">
                   {i + 1}
                 </span>
                 <p>

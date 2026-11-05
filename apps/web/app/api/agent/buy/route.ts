@@ -1,7 +1,7 @@
-import { UntrustedPayeeError, assertVerifiedPayee, resolveMerchant } from "@sangam/ens";
+import { UntrustedPayeeError, assertFairInvoice, assertVerifiedPayee, resolveMerchant } from "@sangam/ens";
 import { createPayingFetch, hashscanTxUrl } from "@sangam/hedera";
 import { agentSigningKey, buyerBudgetAtomic, requireBuyer, spentByWallet } from "@/lib/server/buyer";
-import { merchantEnsName } from "@/lib/server/merchant";
+import { merchantEnsName, ondcGatewayName } from "@/lib/server/merchant";
 import { findByTx } from "@/lib/server/store";
 import type { Invoice } from "@/lib/types";
 
@@ -43,7 +43,11 @@ export async function POST(req: Request) {
     const probe = await fetch(url, { cache: "no-store" });
     const header = probe.headers.get("PAYMENT-REQUIRED");
     if (probe.status !== 402 || !header) throw new Error(`expected a 402 invoice from ${ensName}, got ${probe.status}`);
-    const price = BigInt((JSON.parse(Buffer.from(header, "base64").toString("utf8")) as Invoice).accepts[0]?.amount ?? "0");
+    const option = (JSON.parse(Buffer.from(header, "base64").toString("utf8")) as Invoice).accepts[0];
+    const price = BigInt(option?.amount ?? "0");
+    // Who to pay and how much come from ENS; refuse a dishonest invoice before anything else.
+    const guard = ensName === ondcGatewayName() ? assertVerifiedPayee : assertFairInvoice;
+    if (option) await guard(option);
 
     const spent = spentByWallet(wallet.accountId);
     const limit = buyerBudgetAtomic();
@@ -51,7 +55,7 @@ export async function POST(req: Request) {
       return Response.json({ error: `Over your agent's budget: spent ${spent} of ${limit} (atomic USDC), this costs ${price}.` }, { status: 429 });
     }
 
-    const { buy } = createPayingFetch({ accountId: wallet.accountId, privateKey: agentSigningKey(), guard: assertVerifiedPayee });
+    const { buy } = createPayingFetch({ accountId: wallet.accountId, privateKey: agentSigningKey(), guard });
     const purchase = await buy<Record<string, unknown>>(url);
     if (purchase.status >= 400 || !purchase.settle?.success) {
       const reason = (purchase.body as { error?: string } | null)?.error;
