@@ -1,12 +1,22 @@
 "use client";
 
 import type { Settlement } from "@/lib/types";
+import { Tilt3D } from "./space/kit";
 import { hashscanSchedule, hashscanTopic, hashscanTx, isInFlight, isSimTx, shortTx, usdc } from "../dashboard/format";
 
 /* Small shared pieces the settlement, merchant and buyer desks all use. */
 
-export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <section className={`rounded-2xl border border-line bg-surface ${className}`}>{children}</section>;
+/** A glass panel that floats and tilts slightly toward the pointer (3D, but gentle enough to read). */
+export function Card({ children, className = "", tilt = 2.5 }: { children: React.ReactNode; className?: string; tilt?: number }) {
+  // Grid placement (col-span, row-span) belongs on the outer box, which is the grid item.
+  const all = className.split(/\s+/).filter(Boolean);
+  const placement = all.filter((c) => /(^|:)(col|row)-span-/.test(c)).join(" ");
+  const rest = all.filter((c) => !/(^|:)(col|row)-span-/.test(c)).join(" ");
+  return (
+    <Tilt3D as="section" max={tilt} className={placement} innerClassName={`glass-3d rounded-2xl ${rest}`}>
+      {children}
+    </Tilt3D>
+  );
 }
 
 export function CardHead({ title, hint, right }: { title: string; hint?: string; right?: React.ReactNode }) {
