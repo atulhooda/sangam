@@ -9,9 +9,15 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@sangam/ens": "*",
+    "@sangam/hedera": "*",
+    "@sangam/og": "*",
+    "@sangam/shared": "*",
+    "@x402/next": "~2.28.0",
     "next": "^16.4.3",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.0",
