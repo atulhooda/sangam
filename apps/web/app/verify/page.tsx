@@ -152,8 +152,8 @@ export default function VerifyPage() {
         {/* ── screen 1: login ── */}
         {step === "login" && (
           <div className="mx-auto max-w-md py-10 text-center sm:py-16">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-accent text-3xl font-bold text-white dark:text-[#1a1917]">सं</div>
-            <h1 className="mt-6 text-3xl font-bold tracking-tight">Sign in to Sangam</h1>
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-accent text-3xl font-bold text-white dark:text-[#0e0d13]">सं</div>
+            <h1 className="display mt-6 text-3xl font-semibold tracking-tight">Sign in to Sangam</h1>
             <p className="mt-2 text-sm text-muted">
               No passwords, no wallet. One zero-knowledge proof from your phone — an Aadhaar in India, a passport
               anywhere else. Sangam learns your name and that you're over 18; nothing else about you leaves your
@@ -170,7 +170,7 @@ export default function VerifyPage() {
                   {me.name ? ` — ${me.name}` : ""}.
                 </p>
                 <a
-                  className="mt-4 inline-block w-full rounded-xl bg-accent px-6 py-3 font-medium text-white transition-opacity hover:opacity-90 dark:text-[#1a1917]"
+                  className="mt-4 inline-block w-full rounded-xl bg-accent px-6 py-3 font-medium text-white transition-opacity hover:opacity-90 dark:text-[#0e0d13]"
                   href={me.home}
                 >
                   {me.role === "merchant" ? (me.cert ? "Go to my merchant desk →" : "Finish merchant onboarding →") : "Go to my buyer desk →"}
@@ -191,7 +191,7 @@ export default function VerifyPage() {
             ) : (
               <button
                 onClick={() => setStep(notice ? (role === "merchant" ? "details" : "role") : "role")}
-                className="mt-8 w-full rounded-xl bg-accent px-6 py-4 font-medium text-white transition-opacity hover:opacity-90 dark:text-[#1a1917]"
+                className="mt-8 w-full rounded-xl bg-accent px-6 py-4 font-medium text-white transition-opacity hover:opacity-90 dark:text-[#0e0d13]"
               >
                 Continue with Self →
               </button>
@@ -207,7 +207,7 @@ export default function VerifyPage() {
         {step === "role" && (
           <div className="mx-auto max-w-2xl py-6 text-center sm:py-10">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Step 1</p>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">How are you using Sangam?</h1>
+            <h1 className="display mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">How are you using Sangam?</h1>
             <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <button onClick={() => choose("merchant")} className="group rounded-2xl border border-line bg-surface p-6 text-left transition-colors hover:border-accent">
                 <span aria-hidden className="text-3xl">🏪</span>
@@ -240,7 +240,7 @@ export default function VerifyPage() {
           >
             <div className="text-center">
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Merchant · step 1 of 2</p>
-              <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Pick your shop name</h1>
+              <h1 className="display mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Pick your shop name</h1>
               <p className="mt-2 text-sm text-muted">
                 Sangam publishes it on ENS as <span className="mono text-ink">{(label.trim().toLowerCase().replace(/\.sangam\.eth$/, "") || "yourshop")}.sangam.eth</span> once your
                 certificate is in. First to prove it with Self gets it; no one else can claim it after.
@@ -269,7 +269,7 @@ export default function VerifyPage() {
             <button
               type="submit"
               disabled={starting}
-              className="w-full rounded-xl bg-accent px-6 py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#1a1917]"
+              className="w-full rounded-xl bg-accent px-6 py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0e0d13]"
             >
               {starting ? "Starting…" : "Continue to the Self scan →"}
             </button>
@@ -286,7 +286,7 @@ export default function VerifyPage() {
           <div className="mx-auto max-w-md space-y-5 py-2 sm:py-6">
             <div className="text-center">
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">{role === "merchant" ? "Merchant · step 1 of 2" : "Buyer · last step"}</p>
-              <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Scan with the Self app</h1>
+              <h1 className="display mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Scan with the Self app</h1>
               <p className="mt-2 text-sm text-muted">
                 {role === "merchant" ? <>Proving you run <span className="mono text-ink">{label.trim().toLowerCase().replace(/\.sangam\.eth$/, "")}.sangam.eth</span>. </> : null}
                 Aadhaar in India, a passport anywhere else.

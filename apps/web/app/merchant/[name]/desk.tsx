@@ -228,7 +228,7 @@ export function MerchantDesk({ name, me: initialMe }: { name: string; me: Me }) 
                 <button
                   onClick={retrySetup}
                   disabled={retrying}
-                  className="shrink-0 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#1a1917]"
+                  className="shrink-0 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0e0d13]"
                 >
                   {retrying ? "Setting up… (up to a minute)" : "Retry setup"}
                 </button>

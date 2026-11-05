@@ -4,6 +4,7 @@ import { assertBudgetAllows, BudgetExceededError, budgetSnapshot, recordBudgetSp
 import { merchantEnsName } from "@/lib/server/merchant";
 import { canPayAsAgent } from "@/lib/server/pipeline";
 import { currentUser } from "@/lib/server/session";
+import { agentSigningKey, buyerBudgetAtomic, spentByWallet } from "@/lib/server/buyer";
 import { findByTx } from "@/lib/server/store";
 import type { Invoice } from "@/lib/types";
 
@@ -65,15 +66,27 @@ export async function POST(req: Request) {
     if (probe.status !== 402 || !probeHeader) throw new Error(`expected 402 from merchant, got ${probe.status}`);
     const priceAtomic = (JSON.parse(atob(probeHeader)) as Invoice).accepts[0]?.amount;
     if (!priceAtomic) throw new Error("merchant returned no payment options");
-    await assertBudgetAllows(BigInt(priceAtomic));
+    // A buyer with a connected agent wallet pays from it, against their own
+    // budget; otherwise the agent uses Sangam's shared demo account.
+    const wallet = me.identity.wallet;
+    if (wallet) {
+      const spent = spentByWallet(wallet.accountId);
+      if (spent + BigInt(priceAtomic) > buyerBudgetAtomic()) {
+        return Response.json({ error: `Over your agent wallet's budget (${spent} of ${buyerBudgetAtomic()} atomic USDC spent).` }, { status: 429 });
+      }
+    } else {
+      await assertBudgetAllows(BigInt(priceAtomic));
+    }
 
-    const { buy } = createPayingFetch({ guard: assertVerifiedPayee });
+    const { buy } = createPayingFetch(
+      wallet ? { accountId: wallet.accountId, privateKey: agentSigningKey(), guard: assertVerifiedPayee } : { guard: assertVerifiedPayee },
+    );
     const purchase = await buy<Record<string, unknown>>(url);
     if (purchase.status >= 400 || !purchase.settle?.success) {
       return Response.json({ error: `merchant answered ${purchase.status}`, detail: purchase.body }, { status: 502 });
     }
     const tx = purchase.settle.transaction;
-    await recordBudgetSpend(tx, purchase.price);
+    if (!wallet) await recordBudgetSpend(tx, purchase.price);
     return Response.json({
       kind: body.kind ?? "ticket",
       bought: what,
@@ -82,6 +95,7 @@ export async function POST(req: Request) {
       hederaTxId: tx,
       hashscan: hashscanTxUrl(tx),
       priceAtomic: purchase.price,
+      paidFrom: wallet ? { account: wallet.accountId, kind: "your agent wallet" } : { account: process.env.CUSTOMER_ACCOUNT_ID ?? null, kind: "Sangam demo account" },
       budget: await budgetSnapshot(),
       settlement: findByTx(tx) ?? null,
     });
