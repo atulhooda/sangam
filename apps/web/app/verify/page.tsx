@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { SelfAppBuilder, getUniversalLink } from "@selfxyz/qrcode";
 import type { SelfApp } from "@selfxyz/qrcode";
 import { SelfQRcodeWrapper } from "@selfxyz/qrcode/components/SelfQRcode";
+import { Card, CardHead, LedgerRow, idBadge } from "../components/ui";
 import { ThemeToggle } from "../components/theme-toggle";
 
 /*
@@ -28,31 +29,6 @@ type Identity = {
   disclosed: Record<string, string>;
   verifiedAt: string;
 };
-
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <section className={`rounded-2xl border border-line bg-surface ${className}`}>{children}</section>;
-}
-
-function CardHead({ title, hint, right }: { title: string; hint?: string; right?: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
-      <div>
-        <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
-        {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
-      </div>
-      {right}
-    </div>
-  );
-}
-
-function LedgerRow({ k, v }: { k: string; v: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 py-2">
-      <span className="shrink-0 whitespace-nowrap text-sm text-muted">{k}</span>
-      <span className="min-w-0 truncate text-right text-sm tabular-nums">{v}</span>
-    </div>
-  );
-}
 
 export default function VerifyPage() {
   const [role, setRole] = useState<"merchant" | "user">("merchant");
@@ -198,9 +174,17 @@ export default function VerifyPage() {
                 </a>
               )}
               {verified && (
-                <p className="rounded-lg bg-okbg p-3 text-center text-sm text-ok" role="status">
-                  ✓ Verified as {verified.role} {verified.label && `“${verified.label}”`} — filed on the desk.
-                </p>
+                <div className="rounded-lg bg-okbg p-3 text-center text-sm text-ok" role="status">
+                  ✓ Registered as {verified.role} {verified.label && `“${verified.label}”`}
+                  <div className="mt-2">
+                    <a
+                      className="inline-block rounded-lg bg-ok px-4 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 dark:text-[#1a1917]"
+                      href={verified.role === "merchant" && verified.label ? `/merchant/${encodeURIComponent(verified.label)}` : "/buyer"}
+                    >
+                      Go to your {verified.role === "merchant" ? "merchant desk" : "buyer desk"} →
+                    </a>
+                  </div>
+                </div>
               )}
             </div>
           </Card>
@@ -218,11 +202,15 @@ export default function VerifyPage() {
                 {identities.map((i) => (
                   <LedgerRow
                     key={i.nullifier}
-                    k={`${i.role === "merchant" ? "Merchant" : "User"}${i.label ? ` · ${i.label}` : ""}`}
+                    k={
+                      <a className="hover:underline" href={i.role === "merchant" && i.label ? `/merchant/${encodeURIComponent(i.label)}` : "/buyer"}>
+                        {i.role === "merchant" ? "Merchant" : "User"}{i.label ? ` · ${i.label}` : ""} ↗
+                      </a>
+                    }
                     v={
                       <span className="flex items-center justify-end gap-2">
                         <span className="text-xs">{i.disclosed.name ?? "name withheld"}</span>
-                        <span className="rounded-md bg-okbg px-1.5 py-px text-[10px] font-semibold text-ok">Aadhaar ✓</span>
+                        <span className={`rounded-md px-1.5 py-px text-[10px] font-semibold ${idBadge(i.attestationId).cls}`}>{idBadge(i.attestationId).label}</span>
                       </span>
                     }
                   />

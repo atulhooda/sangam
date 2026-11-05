@@ -21,7 +21,11 @@ Everything runs in **one Next.js app** (`apps/web`): the merchant's x402 paywall
 |---|---|
 | http://localhost:5173 | Home + links |
 | http://localhost:5173/dashboard | The settlement desk: every payment, USDC in → rupees out |
-| http://localhost:5173/verify | The identity desk: merchants & users verify with Aadhaar (Self) |
+| http://localhost:5173/merchant/&lt;ens-name&gt; | The merchant desk: one merchant's settlements, rupees earned, ENS records |
+| http://localhost:5173/buyer | The buyer desk: the agent's purchases and budget left |
+| http://localhost:5173/verify | The identity desk: merchants & users register with Aadhaar or passport (Self) |
+
+People register once at `/verify` — a zero-knowledge proof from their Aadhaar (India) or passport (everyone else). The desks show the proof badge; until then they show a "register" banner. No login: the merchant's ENS name *is* the account, and the buyer's is their Hedera account.
 
 ## Quickstart (no keys, everything mocked)
 

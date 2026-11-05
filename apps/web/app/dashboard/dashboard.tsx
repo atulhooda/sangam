@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { EnsView, Invoice, Quote, ReceiptChain, Settlement, Stats } from "@/lib/types";
+import { Card, CardHead, LedgerRow, MockTag, Spinner, StatusPill } from "../components/ui";
 import { ThemeToggle } from "../components/theme-toggle";
 import { clock, hashscanSchedule, hashscanTopic, hashscanTx, isInFlight, isSimTx, rupees, shortHash, shortId, shortTx, timeAgo, usdc } from "./format";
 
@@ -71,60 +72,6 @@ function useNow() {
 }
 
 /* ───────────────────────── small pieces ───────────────────────── */
-
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <section className={`rounded-2xl border border-line bg-surface ${className}`}>{children}</section>;
-}
-
-function CardHead({ title, hint, right }: { title: string; hint?: string; right?: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
-      <div className="min-w-0">
-        <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
-        {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
-      </div>
-      {right}
-    </div>
-  );
-}
-
-function Spinner({ className = "" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" className={`h-3 w-3 animate-spin ${className}`} aria-hidden>
-      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
-      <path d="M14 8a6 6 0 0 0-6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-/** Status colours are reserved for state, and always carry an icon + label. */
-function StatusPill({ s }: { s: Settlement }) {
-  if (isInFlight(s))
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-infobg px-2.5 py-0.5 text-xs font-medium text-info">
-        <Spinner /> Processing
-      </span>
-    );
-  const map = {
-    paid: { cls: "bg-okbg text-ok", icon: "✓", label: "Paid" },
-    held: { cls: "bg-warnbg text-warn", icon: "‖", label: "Held" },
-    failed: { cls: "bg-badbg text-bad", icon: "✕", label: "Failed" },
-  } as const;
-  const m = map[s.status as keyof typeof map];
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${m.cls}`}>
-      <span aria-hidden className="font-bold">{m.icon}</span> {m.label}
-    </span>
-  );
-}
-
-function MockTag({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded-md border border-dashed border-warn/50 px-1.5 py-px text-[10px] font-medium text-warn">
-      {children}
-    </span>
-  );
-}
 
 /* ───────────────────────── header + banner ───────────────────────── */
 
@@ -357,15 +304,6 @@ function Pipeline({ s }: { s: Settlement }) {
         ))}
       </ol>
     </>
-  );
-}
-
-function LedgerRow({ k, v, tone, strong }: { k: string; v: React.ReactNode; tone?: string; strong?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 py-2">
-      <span className="shrink-0 whitespace-nowrap text-sm text-muted">{k}</span>
-      <span className={`min-w-0 truncate text-right text-sm tabular-nums ${strong ? "font-semibold" : ""} ${tone ?? ""}`}>{v}</span>
-    </div>
   );
 }
 
