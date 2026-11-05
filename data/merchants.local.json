@@ -1,14 +1,14 @@
 {
   "tickets.sangam.eth": {
-    "endpoint": "http://localhost:5173/merchant/book",
-    "hederaPayTo": "0.0.1002",
+    "endpoint": "https://web-production-78c1a7.up.railway.app/merchant/book",
+    "hederaPayTo": "0.0.11227656",
     "network": "hedera:testnet",
     "priceInrPaise": "4900",
     "upiHandle": "tickets@razorpay",
     "status": "verified"
   },
   "bakery.sangam.eth": {
-    "endpoint": "http://localhost:5173/merchant/pay/bakery.sangam.eth",
+    "endpoint": "https://bakery-production-0c21.up.railway.app/demo/shop/bakery/book",
     "hederaPayTo": "0.0.1003",
     "network": "hedera:testnet",
     "priceInrPaise": "45000",

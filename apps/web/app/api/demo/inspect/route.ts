@@ -18,7 +18,12 @@ export async function GET(req: Request) {
   const shop = parseShop(params.get("shop"));
   const variant = SHOPS[shop].variant;
   const attack = variant === "hacked" ? parseAttack(params.get("attack")) : null;
-  const origin = new URL(req.url).origin;
+  // Behind Railway's proxy req.url is the internal URL, and the server is
+  // IPv4-only, so a self-fetch on localhost/::1 fails. Rebuild the public
+  // origin from the forwarded headers the way proxy.ts does.
+  const fwdHost = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  const fwdProto = req.headers.get("x-forwarded-proto") ?? "https";
+  const origin = fwdHost ? `${fwdProto}://${fwdHost}` : new URL(req.url).origin;
   const name = shop === "bakery" ? bakeryEnsName() : merchantEnsName();
 
   try {
