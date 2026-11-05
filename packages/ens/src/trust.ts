@@ -1,3 +1,4 @@
+import { formatUsdc, inrPerUsd, paiseToUsdcAtomic, usdcAtomicToPaise } from "@sangam/shared";
 import { parentName } from "./wallet.ts";
 import { resolveMerchant } from "./resolve.ts";
 
@@ -21,7 +22,15 @@ import { resolveMerchant } from "./resolve.ts";
 export class UntrustedPayeeError extends Error {
   constructor(
     message: string,
-    readonly reason: "no-name" | "not-sangam" | "unverified" | "suspended" | "payto-mismatch" | "network-mismatch" | "lookup-failed",
+    readonly reason:
+      | "no-name"
+      | "not-sangam"
+      | "unverified"
+      | "suspended"
+      | "payto-mismatch"
+      | "network-mismatch"
+      | "price-mismatch"
+      | "lookup-failed",
   ) {
     super(message);
   }
@@ -62,4 +71,54 @@ export async function assertVerifiedPayee(invoice: InvoiceOption): Promise<Trust
     throw new UntrustedPayeeError(`Refused: the invoice is on ${invoice.network}, ${ensName} takes ${record.network}.`, "network-mismatch");
   }
   return { ensName, payTo: record.hederaPayTo, status: record.status };
+}
+
+/**
+ * Exchange-rate wiggle room for the price check, in basis points (2%). The
+ * merchant converts its rupee price to USDC when it bills; the agent converts
+ * again a moment later, so the two can differ by a small rate move.
+ */
+export const PRICE_TOLERANCE_BPS = 200;
+
+export type FairPayee = TrustedPayee & {
+  /** The rupee price published in the merchant's ENS record. */
+  ensPriceInrPaise: number;
+  /** That price in USDC atomic units at the current rate. */
+  ensPriceAtomic: string;
+  /** What the invoice asks for, in USDC atomic units. */
+  invoiceAtomic: string;
+  /** The rate used, in rupees per USDC. */
+  inrPerUsdc: number;
+};
+
+/**
+ * The stricter check for fixed-price merchants: everything assertVerifiedPayee
+ * checks, plus the amount. The invoice may not ask for more than the price in
+ * the merchant's ENS record (converted at the current rate, within
+ * PRICE_TOLERANCE_BPS). A hacked shop backend can show ₹49 on its page and bill
+ * ₹490 in its 402; the agent compares the bill with ENS and refuses to sign.
+ *
+ * Not for catalogue merchants (ONDC), whose price depends on the order.
+ */
+export async function assertFairInvoice(invoice: InvoiceOption): Promise<FairPayee> {
+  const payee = await assertVerifiedPayee(invoice);
+  const record = await resolveMerchant(payee.ensName);
+  const rate = await inrPerUsd();
+  const ensAtomic = paiseToUsdcAtomic(record.priceInrPaise, rate);
+  const billed = BigInt(invoice.amount);
+  const ceiling = (ensAtomic * BigInt(10_000 + PRICE_TOLERANCE_BPS)) / 10_000n;
+  if (billed > ceiling) {
+    const billedInr = usdcAtomicToPaise(billed, rate) / 100;
+    throw new UntrustedPayeeError(
+      `Refused: the invoice asks for ${formatUsdc(billed)} USDC (about ₹${billedInr.toFixed(2)}), but ${payee.ensName}'s ENS record says the price is ₹${(record.priceInrPaise / 100).toFixed(2)} (${formatUsdc(ensAtomic)} USDC). The shop's backend is billing more than its published price.`,
+      "price-mismatch",
+    );
+  }
+  return {
+    ...payee,
+    ensPriceInrPaise: record.priceInrPaise,
+    ensPriceAtomic: ensAtomic.toString(),
+    invoiceAtomic: billed.toString(),
+    inrPerUsdc: rate,
+  };
 }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { Me } from "@/lib/types";
 import { Card, CardHead, idBadge } from "../../components/ui";
-import { ThemeToggle } from "../../components/theme-toggle";
+import { Logo } from "../../components/space/kit";
 import { AccountMenu } from "../../components/account-menu";
 
 const MAX_MB = 5;
@@ -47,19 +47,18 @@ export function CertForm({ me, replacing }: { me: Me; replacing: boolean }) {
     }
   }
 
-  const input = "mt-1 w-full rounded-lg border border-line bg-surface2 px-3 py-2 text-sm outline-none focus:border-accent";
+  const input = "mt-1 w-full rounded-full border border-white/10 bg-white/[0.05]2 px-3 py-2 text-sm outline-none focus:border-accent";
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-line bg-bg/80 backdrop-blur-md">
+      <header className="space-bar sticky top-3 z-40">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-5 py-3.5">
           <div className="flex items-center gap-3">
-            <a href="/" className="text-lg font-bold tracking-tight text-accent">sangam</a>
+            <a href="/" aria-label="Sangam home"><Logo /></a>
             <span className="text-line">/</span>
             <span className="text-sm font-medium">Merchant onboarding</span>
           </div>
           <div className="flex items-center gap-3">
-            <ThemeToggle />
             <AccountMenu me={me} />
           </div>
         </div>
@@ -128,7 +127,7 @@ export function CertForm({ me, replacing }: { me: Me; replacing: boolean }) {
             <button
               type="submit"
               disabled={busy}
-              className="w-full rounded-xl bg-accent px-6 py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#1a1917]"
+              className="w-full rounded-full bg-accent px-6 py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0b0d1a]"
             >
               {busy ? "Creating your Hedera account and ENS name…" : replacing ? "Save and update ENS →" : "Upload and set up my shop →"}
             </button>
