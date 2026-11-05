@@ -5,14 +5,18 @@
   "scripts": {
     "dev": "next dev -p 5173",
     "build": "next build",
-    "start": "next start -p 5173",
+    "start": "next start -H 0.0.0.0 -p ${PORT:-5173}",
     "lint": "next lint"
   },
   "dependencies": {
     "@sangam/ens": "*",
     "@sangam/hedera": "*",
     "@sangam/og": "*",
+    "@sangam/ondc": "*",
     "@sangam/shared": "*",
+    "@selfxyz/core": "^1.2.0-beta.1",
+    "@selfxyz/qrcode": "^1.0.25",
+    "@x402/core": "~2.28.0",
     "@x402/next": "~2.28.0",
     "next": "^16.4.3",
     "react": "^19.1.0",

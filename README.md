@@ -1,451 +1,189 @@
 # Sangam
 
-**Agents pay in USDC. Merchants get rupees.**
-
-Sangam is a settlement rail for the agent economy. An AI agent pays an Indian merchant's API over x402 in USDC on Hedera. Sangam checks the payment on-chain, decides how to settle it with 0G Compute, pays the merchant in INR over UPI, and writes a receipt to a Hedera Consensus Service (HCS) topic. Agents find merchants by ENS name.
-
-This guide takes you from a fresh machine to a real payment. Do the parts in order.
-
-- [How it works](#how-it-works)
-- [Part 1: Install](#part-1-install) (macOS, Linux, Windows)
-- [Part 2: Run it with mocks (no keys)](#part-2-run-it-with-mocks-no-keys)
-- [Part 3: Create accounts and keys](#part-3-create-accounts-and-keys)
-- [Part 4: Turn on the real services](#part-4-turn-on-the-real-services)
-- [Part 5: Make a real payment](#part-5-make-a-real-payment)
-- [Part 6: Deploy](#part-6-deploy)
-- [Running on Windows](#running-on-windows)
-- [Reference](#reference): commands, env variables, mode switches, layout
-- [Troubleshooting](#troubleshooting)
-- [What's verified](#whats-verified)
-
----
-
-## How it works
-
-The payer is an AI agent, not a person, so there's no QR code. The merchant's server answers with **HTTP 402 Payment Required**, a machine-readable invoice. The agent reads it, signs a USDC transfer, and retries.
+Sangam is a settlement rail for the agent economy. An AI agent pays an Indian merchant's API over x402 in USDC on Hedera. Sangam checks the payment on-chain, decides how to settle it with 0G Compute, pays the merchant in INR over UPI, and writes a hash-chained receipt to a Hedera Consensus Service (HCS) topic. Agents find merchants by ENS name; merchants and users prove who they are with an Aadhaar QR (Self offchain SDK) — in zero knowledge.
 
 ```
 1  customer-agent looks up tickets.sangam.eth on ENS → URL, price, payTo, UPI ID
 2  customer-agent: GET /book         → merchant-api replies 402 + invoice
 3  customer-agent signs a USDC transfer; the x402 facilitator submits it on Hedera
-   merchant-api returns the ticket, then notifies settlement-agent
-4  settlement-agent: confirm the transfer on the Mirror Node
-                     decide with 0G Compute (pay out or hold, fee)
-5                    pay the merchant INR over UPI (RazorpayX test mode)
-                     write a receipt to an HCS topic
-   dashboard shows every step
+   merchant-api returns the ticket, then notifies the settlement pipeline
+4  settlement: confirm the transfer on the Mirror Node
+               decide with 0G Compute (pay out or hold, fee)
+5              pay the merchant INR over UPI (RazorpayX test mode)
+               — or, when held, schedule a USDC refund back to the payer
+               write a hash-chained receipt to an HCS topic
+   dashboard shows every step, and verifies the receipt chain from the Mirror Node
 ```
 
-| Service | Port | What it does |
-|---|---|---|
-| `merchant-api` | 3000 | The merchant's shop: rail tickets behind an x402 paywall |
-| `settlement-agent` | 3001 | Confirms, decides, pays out, writes receipts |
-| `dashboard` | 5173 | Shows the flow, the live invoice, every payment |
-| `customer-agent` | (CLI) | The buyer: pays with no human approval |
+Everything runs in **one Next.js app** (`apps/web`): the merchant's x402 paywall, the settlement pipeline, the dashboard and the identity desk.
 
----
+| URL | What it is |
+|---|---|
+| http://localhost:5173 | Home + links |
+| http://localhost:5173/dashboard | The settlement desk: every payment, USDC in → rupees out |
+| http://localhost:5173/merchant/&lt;ens-name&gt; | The merchant desk: one merchant's settlements, rupees earned, ENS records |
+| http://localhost:5173/buyer | The buyer desk: the agent's purchases and budget left |
+| http://localhost:5173/verify | The identity desk: merchants & users register with Aadhaar or passport (Self) |
 
-## Part 1: Install
+People register once at `/verify` — a zero-knowledge proof from their Aadhaar (India) or passport (everyone else). The desks show the proof badge; until then they show a "register" banner. No login: the merchant's ENS name *is* the account, and the buyer's is their Hedera account.
+
+## Quickstart (no keys, everything mocked)
 
 **You need:** Node.js 22 and npm, on macOS, Linux or Windows.
 
-**1. Install Node 22**
-
-| OS | How |
-|---|---|
-| macOS | `brew install node@22`, then `export PATH="/opt/homebrew/opt/node@22/bin:$PATH"` (add that line to `~/.zshrc` to keep it) |
-| Linux | your package manager, or https://nodejs.org |
-| Windows | `winget install OpenJS.NodeJS.LTS`, or the installer from https://nodejs.org. Open a **new** terminal afterwards. |
-
-**2. Install the project**
-
 ```bash
-node -v             # should print v22.x
+# macOS: brew install node@22, then export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
+node -v                 # should print v22.x
 cd sangam
 npm install
-npm run typecheck   # should print nothing and exit cleanly
+npm run typecheck       # should print nothing and exit cleanly
+
+cp .env.example .env    # Windows PowerShell: Copy-Item .env.example .env
+npm run gen-keys        # prints SETTLEMENT_SHARED_SECRET and an EVM key
+npm run dev             # http://localhost:5173
 ```
 
-**3. Create `.env`** (skip if the folder already has one)
+Open **http://localhost:5173/dashboard** and click **Simulate a payment**. Watch it move through the five steps. **Simulate an underpayment** shows the "held" path. Each mock is badged in yellow on the dashboard; turn them off one at a time in `.env`.
 
-```bash
-cp .env.example .env        # Windows PowerShell: Copy-Item .env.example .env
-npm run gen-keys            # prints SETTLEMENT_SHARED_SECRET and an EVM key
-```
+## Make a real payment (Hedera testnet)
 
-Paste the printed `SETTLEMENT_SHARED_SECRET` into `.env`. Keep the rest of the output for step 3.2.
+### 1. Hedera accounts
 
-Every `npm run …` command in this guide works the same on all three OSes. On Windows, see [Running on Windows](#running-on-windows) for the few other commands that differ.
-
----
-
-## Part 2: Run it with mocks (no keys)
-
-Before any accounts exist, every external service can be mocked, so you can see the whole flow. The dashboard shows a yellow badge for each mock that's on.
-
-Open three terminals in `sangam/`:
-
-```bash
-# terminal 1: settlement agent in simulation mode
-npm run settlement:sim
-
-# terminal 2: merchant
-npm run merchant
-
-# terminal 3: dashboard
-npm run dashboard
-```
-
-Open **http://localhost:5173** and click **Send a payment**. Watch it move through the five steps. **Send an underpayment** shows the "held" path.
-
-Other things to try:
-
-```bash
-curl -s localhost:3000/quote                     # the merchant's price
-curl -i "localhost:3000/book?from=CSMT&to=PUNE"  # the real 402 invoice (PAYMENT-REQUIRED header)
-npm run simulate -- 3                            # three payments from the command line
-```
-
-On Windows PowerShell, type `curl.exe` instead of `curl`. Or just open http://localhost:3000/quote in a browser.
-
-`settlement:sim` is the normal settlement agent with `SKIP_CHAIN_VERIFY=true`: it trusts payment notices without checking the chain. Only that run is affected; `.env` isn't changed. The simulate buttons only appear in this mode.
-
----
-
-## Part 3: Create accounts and keys
-
-You need **2 Hedera accounts** and **1 EVM key**. Use fresh testnet-only keys, never a wallet that holds real money.
-
-### 3.1 Hedera testnet accounts (customer + treasury)
-
-1. Go to **https://portal.hedera.com**, sign up, and choose **Testnet**.
-2. Create an account with an **ECDSA** key. Copy its **account ID** (`0.0.xxxxx`) and its **private key**. Hex, `0x`-hex and DER formats all work.
-3. Do it again for a second account.
-4. Paste them into the bottom of `.env`:
+You need 2–3 testnet accounts from **https://portal.hedera.com** (choose **Testnet**, ECDSA keys — raw, `0x`-hex and DER private keys all work). New accounts come with testnet HBAR. In `.env`:
 
 ```bash
 CUSTOMER_ACCOUNT_ID=0.0.xxxxx      # the buyer agent
 CUSTOMER_PRIVATE_KEY=...
 TREASURY_ACCOUNT_ID=0.0.yyyyy      # receives the USDC
 TREASURY_PRIVATE_KEY=...
-OPERATOR_ACCOUNT_ID=0.0.yyyyy      # pays for HCS receipts; copy the treasury values
+OPERATOR_ACCOUNT_ID=0.0.yyyyy      # pays for HCS receipts; can be the treasury account
 OPERATOR_PRIVATE_KEY=...
 ```
 
-New portal accounts come with testnet HBAR. Each account needs about 10 HBAR. The x402 transfer fee is paid by the facilitator, not the agent.
-
-### 3.2 One EVM key (for 0G and ENS)
-
-Use the key `npm run gen-keys` printed in Part 1, or run it again for a new one:
+Get testnet USDC from https://faucet.circle.com (choose **Hedera Testnet**) for the **customer** account, then:
 
 ```bash
-npm run gen-keys
+npm run setup-hedera    # associates USDC with each account, prints balances
+npm run create-topic    # prints HCS_TOPIC_ID → paste into .env
 ```
 
-Put the key in both lines, and keep the printed address handy for the faucets:
+One ₹49 ticket costs about 0.52 USDC, so 10 USDC buys about 19 tickets. Set `CUSTOMER_TOTAL_BUDGET` (see below) to make it last.
+
+### 2. 0G, ENS, UPI (optional — each has a mock)
+
+- **0G Compute** (the payout/hold decision): `npm run setup-0g`, fund the ledger from https://faucet.0g.ai, set `OG_MOCK=false`.
+- **ENS merchant discovery** (Sepolia, ENSv2): `npm run register-parent` then `npm run setup-ens` once; onboard each merchant with `npm run add-merchant -- --label tickets --url http://localhost:5173/merchant/book --payTo 0.0.yyyyy --price 4900 --upi tickets@razorpay`. The merchant needs no wallet — Sangam issues them `<label>.sangam.eth`. Then `ENS_OFFLINE=false`.
+- **Real UPI payouts** (RazorpayX test mode): set `PSP_MODE=razorpayx` with keys from https://razorpay.com. Approval can take days; everything stays mocked without it.
+
+### 3. Pay
+
+Fill in the customer keys, then on the dashboard click **Pay as agent** (a rail ticket) or **Buy on ONDC as agent** (goods from an ONDC seller). No approval step: the agent reads the 402, signs testnet USDC, retries — the payment lands in the pipeline and the receipt on HCS. From the command line:
 
 ```bash
-OG_PRIVATE_KEY=0x...
-ENS_OWNER_PRIVATE_KEY=0x...
+npm run buy-ondc -- atta 1        # buy 10 kg atta through ONDC, paid in USDC
 ```
 
-### 3.3 Test tokens
+## Agent spending controls
 
-| Token | Amount | Where | Send to |
-|---|---|---|---|
-| HBAR | ~10 per account | comes with portal accounts | — |
-| USDC (Hedera testnet) | 10 | https://faucet.circle.com, choose **Hedera Testnet** | the **customer** account. Do step 4.1 first: the account must be associated with USDC before it can receive it. |
-| OG | ~2 | https://faucet.0g.ai | your EVM address |
-| Sepolia ETH | ~0.05 | any Sepolia faucet, e.g. Google Cloud's Web3 faucet | your EVM address |
-
-One ₹49 ticket costs about 0.52 USDC, so 10 USDC buys about 19 tickets. To make it last while testing, lower the price (see 4.4).
-
-If a faucet gives too little OG, ask in 0G's Discord. Their hackathon prize page says teams get free credits.
-
-### 3.4 RazorpayX test keys (optional)
-
-Only needed for real UPI payouts in test mode. Without them, payouts stay mocked and everything else works.
-
-1. Sign up at https://razorpay.com and enable **RazorpayX**. Approval can take days, so start early.
-2. In **test mode**, create API keys and note your RazorpayX account number.
-3. Fill in `PSP_KEY_ID`, `PSP_KEY_SECRET`, `RAZORPAYX_ACCOUNT_NUMBER`.
-
----
-
-## Part 4: Turn on the real services
-
-Each step replaces one mock. After each one, run the check under it before moving on.
-
-### 4.1 Hedera: associate USDC
-
-```bash
-npm run setup-hedera
-```
-
-This links testnet USDC (`0.0.429274`) to the customer and treasury accounts, then prints every balance. Now get USDC from the Circle faucet for the customer (3.3), and run it again:
-
-```bash
-npm run setup-hedera
-# customer  0.0.xxxxx       1000.00 HBAR   10.00 USDC
-# treasury  0.0.yyyyy       1000.00 HBAR   0.00 USDC
-# operator  0.0.yyyyy       1000.00 HBAR   0.00 USDC
-```
-
-Then open `data/merchants.local.json` and set `hederaPayTo` to your **treasury** ID. The script warns you if it doesn't match.
-
-### 4.2 Hedera: create the receipt topic
-
-```bash
-npm run create-topic
-# HCS_TOPIC_ID=0.0.zzzzz
-# https://hashscan.io/testnet/topic/0.0.zzzzz
-```
-
-Paste `HCS_TOPIC_ID` into `.env`.
-
-### 4.3 0G: fund inference
-
-```bash
-npm run setup-0g             # prints your OG balance and the list of providers
-```
-
-Pick a provider address from the list and set `OG_PROVIDER_ADDRESS` in `.env`. Then:
-
-```bash
-npm run setup-0g -- fund     # opens the ledger (1 OG) and funds the provider (0.5 OG)
-```
-
-The testnet contract minimums are 0.1 OG for the ledger and 0.01 OG per provider. Change `OG_LEDGER_DEPOSIT` / `OG_PROVIDER_FUND` if you have less. Finally, set `OG_MOCK=false`.
-
-### 4.4 ENS: publish the merchant
-
-1. Go to **https://sepolia.app.ens.domains** (ENSv2 is live on Sepolia) and register a name with your EVM key's wallet, e.g. `yourshop-tickets.eth`. ENSv2 registration fees on Sepolia are paid in MockUSDC, which anyone can mint; the ENS docs explain how. A plain `.eth` name is enough; a subname like `tickets.yourname.eth` is optional.
-2. Publish Sangam's records on it:
-
-```bash
-npm run register-merchant -- \
-  --name yourshop-tickets.eth \
-  --url http://localhost:3000/book \
-  --payTo 0.0.yyyyy \
-  --price 4900 \
-  --upi tickets@razorpay
-```
-
-- `--url`: `localhost` is fine while the buyer runs on your machine. Change it to the public URL after deploying (Part 6).
-- `--payTo`: your **treasury** account ID.
-- `--price`: in paise. `4900` = ₹49. Use `500` (₹5) to make test USDC last longer.
-- `--upi`: the merchant's UPI ID. With RazorpayX test mode, use a test VPA from their docs.
-
-3. In `.env`, set `MERCHANT_ENS_NAME=yourshop-tickets.eth` and `ENS_OFFLINE=false`.
-
-**Check:** `npm run merchant` should print your ENS name and treasury ID. If a record is missing, it names the missing key.
-
-### 4.5 UPI: RazorpayX test mode (optional)
-
-Set `PSP_MODE=razorpayx` once the keys from 3.4 are in. Before relying on it, compare the request body in `apps/settlement-agent/src/payout.ts` with the current RazorpayX composite payout docs. It hasn't been run against the live API yet.
-
----
-
-## Part 5: Make a real payment
-
-Check `.env`: `SKIP_CHAIN_VERIFY=false`, plus whichever of `OG_MOCK`, `ENS_OFFLINE`, `PSP_MODE` you've switched to real. Then:
-
-```bash
-# terminal 1
-npm run settlement
-# terminal 2
-npm run merchant
-# terminal 3
-npm run dashboard          # http://localhost:5173
-# terminal 4: the buyer
-npm run buy -- --merchant yourshop-tickets.eth --count 3
-```
-
-The buyer prints something like:
-
-```
-[agent] yourshop-tickets.eth → http://localhost:3000/book (₹49, found via ENS)
-[agent] #1 paid 0.515816 USDC · PNR 4821930571 · Intercity Express · C3/41
-        https://hashscan.io/testnet/transaction/...
-[agent] done. spent 1.547448 of 2.000000 USDC budget
-```
-
-On the dashboard, each payment should reach **paid**, with a working **USDC tx** link and **HCS #n** link in the Proof column. Run `npm run setup-hedera` to see USDC leave the customer and arrive at the treasury.
-
-The buyer stops at `CUSTOMER_BUDGET_USDC` per run (default 2), and the SDK refuses any single payment over `CUSTOMER_MAX_PER_PAYMENT` (default $1).
-
----
-
-## Part 6: Deploy
-
-You need a public URL for the demo. Any Node host works; these steps use Render.
-
-**merchant-api and settlement-agent:** two Web Services from the same repo.
-
-| | merchant-api | settlement-agent |
+| Control | Env var | What it does |
 |---|---|---|
-| Build command | `npm install` | `npm install` |
-| Start command | `npm run merchant` | `npm run settlement` |
-| Env vars | everything from `.env`, plus `SETTLEMENT_AGENT_URL=<settlement URL>` | everything from `.env`, plus `DEMO_STEP_DELAY_MS=0` |
+| Per payment | `CUSTOMER_MAX_PER_PAYMENT` (default `$1`) | Hard cap the x402 SDK enforces per transaction |
+| Cumulative | `CUSTOMER_TOTAL_BUDGET` (e.g. `25`) | Total USDC across all purchases, persisted in `data/agent-budget.local.json`. The dashboard shows what's left; a purchase that would exceed it is refused with HTTP 429 — before anything is signed. |
 
-Set `DASHBOARD_ORIGIN` on both to the dashboard's URL. Both servers listen on `PORT` when the host sets it, so there's nothing to map.
+Unset `CUSTOMER_TOTAL_BUDGET` = no cumulative cap.
 
-**dashboard:** a Static Site.
+## Use Sangam from your own agent (MCP)
+
+Sangam ships as an MCP server, so any MCP client — Claude Code, Claude Desktop, an IDE agent — can discover merchants, buy with USDC and check settlements:
 
 ```bash
-VITE_SETTLEMENT_URL=https://<settlement>.onrender.com \
-VITE_MERCHANT_URL=https://<merchant>.onrender.com \
-npm --workspace @sangam/dashboard run build      # output: apps/dashboard/dist
+claude mcp add sangam -- npm run mcp      # from the repo root
 ```
 
-Or put both `VITE_*` values in `.env` and run just the last line. That works on every OS. On a static host like Render, set them as the site's env vars with build command `npm install && npm --workspace @sangam/dashboard run build` and publish directory `apps/dashboard/dist`.
-
-**Then:** re-run `register-merchant` with `--url https://<merchant>.onrender.com/book`, so agents find the public shop.
-
-Notes:
-- Free hosts have temporary disks, so `data/settlements.json` resets on restart. That's fine for a demo.
-- Set the env vars in the host's dashboard. Never commit `.env`.
-- Generate a new `SETTLEMENT_SHARED_SECRET` for the deployed services (`npm run gen-keys`).
-
----
-
-## Running on Windows
-
-You have two options.
-
-**Option A: WSL (easiest).** WSL gives you a Linux terminal inside Windows, and every command in this guide then works exactly as written.
-
-1. In an **admin** PowerShell: `wsl --install`, then restart.
-2. Open **Ubuntu** from the Start menu and install Node 22 inside it, e.g. with `nvm` or the NodeSource packages from https://nodejs.org.
-3. Put the project inside the Linux file system (e.g. `~/sangam`), not under `/mnt/c/…`, which is much slower.
-4. Follow this guide as if you were on Linux. Browsers on Windows can open `http://localhost:5173` directly.
-
-**Option B: native PowerShell.** Every `npm run …` command works unchanged. These are the only differences:
-
-| In this guide | In PowerShell |
+| Tool | What it does |
 |---|---|
-| `cp .env.example .env` | `Copy-Item .env.example .env` |
-| `curl …` | `curl.exe …` (plain `curl` is a different command in Windows PowerShell) |
-| `export PATH=…` | not needed; the Node installer sets PATH |
-| `lsof -nP -iTCP:3000 -sTCP:LISTEN` | `netstat -ano \| findstr :3000`, then `taskkill /PID <pid> /F` |
-| `\` at the end of a line (multi-line commands) | `` ` `` (backtick), or put the whole command on one line |
-| `VAR=value npm run …` | `$env:VAR="value"; npm run …` (stays set for that window) |
+| `lookup_merchant` | ENS name → endpoint, payTo, UPI handle, price |
+| `search_catalog` | Search ONDC goods payable in USDC |
+| `buy` | x402 purchase: signs USDC on Hedera, returns the tx + HashScan link |
+| `settlement_status` | Settlement records: decision, rupees paid out, HCS receipt |
 
-For example, the ENS step on one line in PowerShell:
+The MCP `buy` tool signs with the `CUSTOMER_*` key from `.env`; the per-payment cap applies, and the dashboard's own buyer additionally enforces the cumulative budget.
 
-```powershell
-npm run register-merchant -- --name yourshop-tickets.eth --url http://localhost:3000/book --payTo 0.0.yyyyy --price 4900 --upi tickets@razorpay
-```
+## Held payments: scheduled refunds
 
-If Windows Firewall asks about Node.js when a server starts, **Allow** on private networks is enough for local use.
+When the 0G decision is **hold** (an underpayment, or an ONDC order the seller never accepted), the USDC stays in Sangam's treasury and the pipeline schedules a refund: a `ScheduleCreateTransaction` that sends the USDC back to the payer. The schedule has no admin key — once created, nobody (including Sangam) can change or cancel it — and it executes once the treasury's signature is on it. If the operator and treasury are the same account it executes immediately; otherwise it waits, visibly, on HashScan (linked from the dashboard's Proof column).
 
----
+## Receipt chain: tamper-evident by construction
+
+Every settlement receipt on HCS carries `prev`: the sequence number and sha256 of the receipt before it. The dashboard's **Receipt chain** card replays the topic **from the Mirror Node** — not from Sangam's own files — and checks every link. Drop or reorder one receipt and the chain breaks for everyone to see.
+
+## Identity: Aadhaar, in zero knowledge (Self offchain SDK)
+
+Merchants and users verify once at **/verify**: pick your role, scan the QR with the [Self app](https://self.xyz), and the app builds a zero-knowledge proof from your Aadhaar QR (attestation id 3; passports and EU ID cards also work). Sangam's backend (`/api/self/verify`, the `SelfBackendVerifier` from `@selfxyz/core`) checks the proof and learns only what was disclosed — your name and that you're over 18. The Aadhaar number itself never leaves your phone; the proof's nullifier (one per person, per app) is the only id we store.
+
+`NEXT_PUBLIC_SELF_MOCK=true` (default) uses Self's test documents while building. For real proofs the endpoint must be publicly reachable over https (deploy, or a tunnel): set `NEXT_PUBLIC_SELF_ENDPOINT` to the public origin and `NEXT_PUBLIC_SELF_MOCK=false` before building. The QR page and the verifier both read these (`apps/web/lib/self-config.ts`), so they always agree.
 
 ## Reference
 
-### Commands
-
 | Command | What it does |
 |---|---|
-| `npm run settlement` | Start settlement-agent (:3001) |
-| `npm run settlement:sim` | Start settlement-agent in simulation mode (enables simulate buttons + `npm run simulate`) |
-| `npm run gen-keys` | Print a new shared secret and EVM key |
-| `npm run merchant` | Start merchant-api (:3000) |
-| `npm run dashboard` | Start the dashboard (:5173) |
-| `npm run buy -- --merchant <name> [--count N] [--from CSMT --to PUNE]` | Run the buyer agent |
-| `npm run simulate -- [N] [--short]` | Send fake notices (needs `npm run settlement:sim` running) |
+| `npm run dev` | The whole app on http://localhost:5173 |
+| `npm run typecheck` | Typecheck every package and script |
+| `npm run web:build` | Production build of the app |
 | `npm run setup-hedera` | Associate USDC, print balances |
 | `npm run create-topic` | Create the HCS receipt topic |
-| `npm run setup-0g [-- fund]` | List 0G providers / fund the ledger and provider |
-| `npm run register-merchant -- --name … --url … --payTo … --price … --upi …` | Publish ENS records |
-| `npm run typecheck` | Typecheck everything |
+| `npm run setup-0g` | 0G balances, providers, `-- fund` |
+| `npm run register-parent` | One-off: register sangam.eth on ENSv2 Sepolia |
+| `npm run setup-ens` | One-off: make sangam.eth Sangam's merchant registry |
+| `npm run add-merchant` | Onboard a merchant (issues their subname, writes records) |
+| `npm run simulate` | Simulated payments, no money moves |
+| `npm run buy-ondc` | Buy ONDC goods as the agent |
+| `npm run mcp` | Run the MCP server (stdio) |
+| `npm run gen-keys` | Print a shared secret + fresh EVM key |
 
-### Mode switches
+**Layout:** `apps/web` is the whole app — `app/` routes (merchant x402 paywall, ONDC buyer, settlement API, dashboard, identity desk), `lib/server/` the settlement pipeline. `packages/hedera` (x402, Mirror Node, HCS, HTS, scheduled refunds, receipt chain), `packages/ens` (merchant discovery), `packages/og` (0G decisions), `packages/ondc` (buyer-app protocol), `packages/shared` (types, config, FX, UPI), `packages/mcp` (the agent-facing MCP server).
 
-| Variable | Mock value | Real value | Real needs |
-|---|---|---|---|
-| `SKIP_CHAIN_VERIFY` | `true` | `false` | Hedera accounts (4.1) |
-| `OG_MOCK` | `true` | `false` | 0G funded (4.3) |
-| `ENS_OFFLINE` | `true` | `false` | ENS records (4.4) |
-| `PSP_MODE` | `mock` | `razorpayx` | RazorpayX test keys (4.5) |
-| `DEMO_STEP_DELAY_MS` | `800` | `0` | — (only slows steps so you can watch) |
+**Key env vars** (all in `.env.example` with comments): `CUSTOMER_*`, `TREASURY_*`, `OPERATOR_*`, `HCS_TOPIC_ID`, `CUSTOMER_MAX_PER_PAYMENT`, `CUSTOMER_TOTAL_BUDGET`, `SETTLEMENT_SHARED_SECRET`, `SANGAM_API_URL`, `OG_*`, `ENS_*`, `PSP_*`, `NEXT_PUBLIC_SELF_MOCK`, `NEXT_PUBLIC_SELF_ENDPOINT`.
 
-### Env variables you fill in
+## Running on Windows
 
-| Variable | From |
-|---|---|
-| `CUSTOMER_ACCOUNT_ID`, `CUSTOMER_PRIVATE_KEY` | portal.hedera.com (3.1) |
-| `TREASURY_ACCOUNT_ID`, `TREASURY_PRIVATE_KEY` | portal.hedera.com (3.1) |
-| `OPERATOR_ACCOUNT_ID`, `OPERATOR_PRIVATE_KEY` | same as treasury (3.1) |
-| `OG_PRIVATE_KEY`, `ENS_OWNER_PRIVATE_KEY` | generated EVM key (3.2) |
-| `HCS_TOPIC_ID` | `npm run create-topic` (4.2) |
-| `OG_PROVIDER_ADDRESS` | `npm run setup-0g` (4.3) |
-| `MERCHANT_ENS_NAME` | the ENS name you register (4.4) |
-| `PSP_KEY_ID`, `PSP_KEY_SECRET`, `RAZORPAYX_ACCOUNT_NUMBER` | RazorpayX test mode (3.4, optional) |
-| `SEPOLIA_RPC_URL` | optional; blank uses a public RPC |
-
-Everything else in `.env.example` has a working default.
-
-### Layout
-
-| Path | What |
-|---|---|
-| `packages/shared` | Types, env loading, ENS lookup, FX rate, Hedera helpers |
-| `apps/merchant-api` | Express + `@x402/express` paywall on `GET /book` |
-| `apps/settlement-agent` | Pipeline: `confirm.ts` → `decide.ts` (0G) → `payout.ts` → `receipt.ts` (HCS) |
-| `apps/customer-agent` | Buyer CLI with a session budget |
-| `apps/dashboard` | Vite page; dev proxy in `vite.config.ts` |
-| `scripts/` | One-off setup scripts and the simulator |
-| `data/merchants.local.json` | Merchant records used while `ENS_OFFLINE=true` |
-| `data/settlements.json` | Settlement store (created on first payment, gitignored) |
-| `docs/SPEC.md` | The build spec |
-
----
+PowerShell users: type `curl.exe` where this guide says `curl`, and use `Copy-Item .env.example .env`. If PowerShell blocks npm scripts, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once. Every `npm run` command works unchanged.
 
 ## Troubleshooting
 
 | Symptom | Likely cause and fix |
 |---|---|
-| `Missing env var X` | Fill in X in `.env` (see the table above). |
-| `command not found: node` (macOS) | Run `export PATH="/opt/homebrew/opt/node@22/bin:$PATH"`. |
-| `'node' is not recognized` (Windows) | Open a new terminal after installing Node. If it persists, reinstall Node and tick "Add to PATH". |
-| `EADDRINUSE` on 3000/3001/5173 | Something's already running there. macOS/Linux: `lsof -nP -iTCP:3000 -sTCP:LISTEN`. Windows: `netstat -ano \| findstr :3000`. Stop that process. |
-| Windows: `running scripts is disabled on this system` | PowerShell blocks npm's script wrapper. Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, or use Command Prompt. |
+| `Missing env var X` | Fill in X in `.env`. |
+| `command not found: node` (macOS) | Run the PATH export from Quickstart. |
+| `'node' is not recognized` (Windows) | Open a new terminal after installing Node. |
+| `EADDRINUSE` on 5173 | Something's already on the port. macOS/Linux: `lsof -nP -iTCP:5173 -sTCP:LISTEN`. |
 | Circle faucet won't send USDC | The account isn't associated yet. Run `npm run setup-hedera` first. |
-| Settlement `failed: transaction … not found on mirror node` | The Mirror Node can lag; the agent retries for ~15s. If it persists, check the tx on HashScan. |
-| Settlement `failed: treasury credited 0 …` | `hederaPayTo` (local file or ENS record) isn't your treasury, or `HEDERA_USDC_TOKEN_ID` is wrong. |
-| Buyer: `expected 402 from merchant, got …` | merchant-api isn't running, or the ENS `url` record points somewhere else. |
-| Buyer refuses to pay | The price is over `CUSTOMER_MAX_PER_PAYMENT`, or the run budget is used up. |
-| Payment rejected by the facilitator | Try another facilitator in `FACILITATOR_URL`: `https://x402.org/facilitator` or `https://testnet.facilitator.ax402.io`. |
-| `is missing ENS text records` | Re-run `register-merchant`; wait a minute for Sepolia to confirm. |
-| 0G: `insufficient balance` | Fund the wallet, then run `npm run setup-0g -- fund`. Each request needs a funded provider. |
-| 0G decision is always "hold: not valid decision JSON" | The model isn't returning JSON. Try another provider from `setup-0g`. |
-| Dashboard: "settlement agent unreachable" | Start `npm run settlement`. Deployed: check `VITE_SETTLEMENT_URL` and `DASHBOARD_ORIGIN`. |
-| HashScan link shows "not found" | Wait a few seconds. If it persists, search the tx ID on hashscan.io by hand; the link format hasn't been checked against a real tx yet. |
-| No simulate buttons on the dashboard | Start the agent with `npm run settlement:sim` instead of `npm run settlement`. |
-
----
+| `failed: transaction … not found on mirror node` | The Mirror Node lags; the pipeline retries ~15 s. If it persists, check the tx on HashScan. |
+| `failed: treasury credited 0 …` | `hederaPayTo` isn't your treasury, or `HEDERA_USDC_TOKEN_ID` is wrong. |
+| `expected 402 from merchant, got …` | The app isn't running, or the ENS `url` record points elsewhere. |
+| Buyer refuses to pay | Price over `CUSTOMER_MAX_PER_PAYMENT`, or the cumulative `CUSTOMER_TOTAL_BUDGET` is used up. |
+| Payment rejected by the facilitator | Try another `FACILITATOR_URL`: `https://x402.org/facilitator` or `https://testnet.facilitator.ax402.io`. |
+| Scheduled refund not executing | It's waiting for the treasury's signature (operator ≠ treasury). Sign it, or set `TREASURY_PRIVATE_KEY`. |
+| Receipt chain card shows "propagating" | The Mirror Node is a few seconds behind consensus. It catches up. |
+| Self QR scans but never verifies | The endpoint must be reachable from the phone: in mock mode, check `NEXT_PUBLIC_SELF_MOCK=true` and use the Self app's test mode; for real proofs, deploy or tunnel and set `NEXT_PUBLIC_SELF_ENDPOINT`. |
 
 ## What's verified
 
 | Part | Status |
 |---|---|
-| x402 paywall returns a correct 402 (testnet USDC, Blocky402 fee payer) | ✅ Tested against the live facilitator |
-| Settlement pipeline, store, dashboard, simulator, duplicate + auth checks | ✅ Tested with mocks |
-| Typecheck of every package and script | ✅ |
-| Hedera SDK accepts raw, `0x` and DER private keys | ✅ |
-| 0G testnet minimums (0.1 OG ledger, 0.01 OG provider) | ✅ Read from the live contract |
-| Real x402 payment end to end | ⬜ Needs funded Hedera accounts |
-| Mirror Node confirmation, HCS receipts, `setup-hedera` | ⬜ Needs Hedera accounts |
-| 0G Compute decision, `setup-0g` | ⬜ Needs OG funds |
-| ENS lookup, `register-merchant` | ⬜ Needs a Sepolia ENSv2 name |
-| RazorpayX payout | ⬜ Needs test keys; request body unverified |
-| HashScan link format | ⬜ Needs a real tx |
-| Windows (native or WSL) | ⬜ Not run yet; only tested on macOS. The code uses no OS-specific APIs. |
+| Real x402 payment: USDC leaves the customer, lands in the treasury, HashScan-verified | ✅ live on testnet |
+| Mirror Node confirmation of every payment before payout | ✅ live |
+| HCS receipts on topic 0.0.11264249, hash-chained, verified from the Mirror Node | ✅ live |
+| ENS merchant discovery (ENSv2 subnames on Sepolia), ONDC subname issuing | ✅ live |
+| 0G Compute decisions, 0G ledger | 🟡 code done; run with `OG_MOCK=false` + funds |
+| RazorpayX UPI payout | 🟡 request built per docs; needs test keys to run |
+| Scheduled refunds | 🟡 needs operator/treasury env set; verified by typecheck + smoke test |
+| Agent budget | ✅ tested (429 path + dashboard bar) |
+| MCP server | ✅ boots, tools run against live ENS + settlement data |
+| Aadhaar identity (Self offchain SDK) | 🟡 mock mode by default; real proofs need a public https endpoint + `NEXT_PUBLIC_SELF_MOCK=false` |
 
 ## Built with
 
-TypeScript, Express, `@x402/*` (Hedera exact scheme), `@hiero-ledger/sdk`, `@0gfoundation/0g-compute-ts-sdk`, viem, Vite. Built with help from Claude Code; the spec it worked from is `docs/SPEC.md`.
+TypeScript, Next.js 16, `@x402/*` (Hedera exact scheme, Blocky402 facilitator), `@hiero-ledger/sdk`, `@selfxyz/core` + `@selfxyz/qrcode` (Aadhaar identity), `@0gfoundation/0g-compute-ts-sdk`, viem. Built with help from Claude Code; the spec it worked from is `docs/SPEC.md`.
 
 MIT license.
-# sangham

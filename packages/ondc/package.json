@@ -1,0 +1,14 @@
+{
+  "name": "@sangam/ondc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ONDC: Sangam as a Retail B2B buyer app (BAP). Signed search/select/init/confirm with async on_* callbacks.",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@sangam/shared": "*"
+  }
+}

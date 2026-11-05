@@ -7,8 +7,17 @@ import { listSettlements } from "@/lib/server/store";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  return Response.json(listSettlements(), { headers: { "cache-control": "no-store" } });
+export function GET(req: Request) {
+  // Optional filters so the merchant and buyer desks read only their own rows:
+  //   /api/settlements?merchant=tickets.sangam.eth
+  //   /api/settlements?payer=0.0.xxxxx
+  let rows = listSettlements();
+  const url = new URL(req.url);
+  const merchant = url.searchParams.get("merchant");
+  const payer = url.searchParams.get("payer");
+  if (merchant) rows = rows.filter((s) => s.merchant.toLowerCase() === merchant.toLowerCase());
+  if (payer) rows = rows.filter((s) => s.payer === payer);
+  return Response.json(rows, { headers: { "cache-control": "no-store" } });
 }
 
 const NoticeSchema = z.object({
@@ -16,6 +25,21 @@ const NoticeSchema = z.object({
   hederaTxId: z.string().min(1).refine((tx) => !isSimulatedTx(tx), "sim- transaction ids are reserved for /api/simulate"),
   payer: z.string().optional(),
   usdcAmount: z.string().regex(/^\d+$/),
+  quotedInrPaise: z.number().int().positive().optional(),
+  ondc: z
+    .object({
+      transactionId: z.string(),
+      orderId: z.string(),
+      state: z.string(),
+      bppId: z.string(),
+      bppUri: z.string().url(),
+      providerId: z.string(),
+      providerName: z.string(),
+      items: z.array(z.object({ id: z.string(), name: z.string(), count: z.number().int().positive() })),
+      quoteInrPaise: z.number().int().positive(),
+      sellerUpi: z.string().min(3),
+    })
+    .optional(),
 });
 
 function authorised(req: Request): boolean {

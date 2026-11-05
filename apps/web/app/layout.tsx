@@ -25,8 +25,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f7f5f0" },
-    { media: "(prefers-color-scheme: dark)", color: "#151412" },
+    { media: "(prefers-color-scheme: light)", color: "#f4f3f7" },
+    { media: "(prefers-color-scheme: dark)", color: "#0e0d13" },
   ],
 };
 
@@ -44,7 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* first Tab stop on every page: jump past the nav */}
         <a
           href="#main"
-          className="sr-only rounded-lg bg-accent px-4 py-2 font-medium text-white focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] dark:text-[#1a1917]"
+          className="sr-only rounded-lg bg-accent px-4 py-2 font-medium text-white focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] dark:text-[#0e0d13]"
         >
           Skip to content
         </a>
