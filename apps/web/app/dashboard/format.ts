@@ -26,4 +26,5 @@ export const clock = (iso: string) =>
 export const isInFlight = (s: Settlement) => s.status === "received" || s.status === "confirmed" || s.status === "decided";
 
 export const hashscanTx = (tx: string) => `https://hashscan.io/testnet/transaction/${encodeURIComponent(tx)}`;
+export const hashscanTopic = (topicId: string) => `https://hashscan.io/testnet/topic/${topicId}`;
 export const isSimTx = (tx: string) => tx.startsWith("sim-");

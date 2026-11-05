@@ -2,6 +2,6 @@ import { stats } from "@/lib/server/pipeline";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  return Response.json(stats(), { headers: { "cache-control": "no-store" } });
+export async function GET() {
+  return Response.json(await stats(), { headers: { "cache-control": "no-store" } });
 }
