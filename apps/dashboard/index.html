@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sangam Dashboard</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <h1>Sangam</h1>
+        <p class="tagline">Agents pay in USDC. Merchants get rupees.</p>
+      </div>
+      <div id="mocks" class="mocks"></div>
+    </header>
+
+    <!-- How a payment moves -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>How a payment works</h2>
+        <p id="flow-caption" class="muted">Waiting for a payment. Send one below to watch it move.</p>
+      </div>
+      <ol id="flow" class="flow"></ol>
+      <details class="why">
+        <summary>Why is there no QR code?</summary>
+        <p>
+          A QR code is how a <em>person</em> tells their phone what to pay. Here the payer is an AI agent with no camera,
+          so the merchant answers its request with <strong>HTTP 402 Payment Required</strong>: a machine-readable invoice
+          (amount, token, account to pay). The agent reads it, signs a USDC transfer and retries. That 402 invoice, shown below, is the agent's
+          QR code.
+        </p>
+        <p>
+          The only QR in the picture is the merchant's existing UPI QR at their shop. The UPI ID inside it is where Sangam pays the rupees.
+        </p>
+      </details>
+    </section>
+
+    <!-- Merchant + live invoice -->
+    <section class="two-col">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>The merchant</h2>
+          <p class="muted">What the agent finds by looking up the ENS name</p>
+        </div>
+        <dl id="merchant" class="facts"><dt>Loading…</dt><dd></dd></dl>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>The invoice the agent receives</h2>
+          <p class="muted">Live 402 response from <code>GET /book</code>, refreshed every 30s</p>
+        </div>
+        <dl id="invoice" class="facts"><dt>Loading…</dt><dd></dd></dl>
+        <details class="raw">
+          <summary>Raw PAYMENT-REQUIRED header (decoded)</summary>
+          <pre id="invoice-raw"></pre>
+        </details>
+      </div>
+    </section>
+
+    <!-- Try it -->
+    <section id="try" class="panel try">
+      <div class="panel-head">
+        <h2>Try it</h2>
+        <p id="try-note" class="muted"></p>
+      </div>
+      <div id="try-actions" class="actions"></div>
+    </section>
+
+    <!-- Totals -->
+    <section class="cards">
+      <div class="card"><span class="label">Payments</span><span id="count" class="value">0</span></div>
+      <div class="card"><span class="label">USDC received</span><span id="usdc" class="value">0</span></div>
+      <div class="card"><span class="label">Paid out over UPI</span><span id="inr" class="value">₹0</span></div>
+      <div class="card"><span class="label">0G compute balance</span><span id="og" class="value">—</span></div>
+    </section>
+
+    <!-- Every payment -->
+    <section class="panel flush">
+      <div class="panel-head padded">
+        <h2>All payments</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Progress</th>
+              <th class="num">USDC in</th>
+              <th class="num">₹ out</th>
+              <th>Status</th>
+              <th>0G decision</th>
+              <th>Proof</th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="7" class="empty">No payments yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
