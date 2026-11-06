@@ -200,6 +200,11 @@ export default function VerifyPage() {
                 Merchant with a password? Sign in with your shop name →
               </a>
             )}
+            {!me && (
+              <a href="/buyer/login" className="mt-2 block text-sm text-accent underline-offset-2 hover:underline">
+                Buyer with a password? Sign in with your username →
+              </a>
+            )}
             <p className="mt-6 text-xs text-muted">
               The proof is verified at <span className="mono">/api/self/verify</span> and only the disclosed fields are stored.
               {selfMock() && " Test mode: use the Self app's mock documents."}

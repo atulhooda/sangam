@@ -106,3 +106,47 @@ export async function ensureDemoMerchant(login: DemoLogin): Promise<VerifiedIden
     error: undefined,
   });
 }
+
+/* ── demo buyers: username + password, no Self scan (DEMO_BUYER_LOGINS) ── */
+
+export type DemoBuyer = { username: string; password: string };
+
+/** DEMO_BUYER_LOGINS="asha:1234,ravi:1234" */
+export function demoBuyers(): DemoBuyer[] {
+  return (process.env.DEMO_BUYER_LOGINS ?? "")
+    .split(",")
+    .map((entry) => entry.trim().split(":"))
+    .filter((p) => p.length === 2 && p.every((x) => x.trim()))
+    .map(([username, password]) => ({ username: username!.trim().toLowerCase(), password: password! }));
+}
+
+/** Constant-time check of a demo buyer's username and password. */
+export function checkDemoBuyer(username: string, password: string): DemoBuyer | null {
+  const u = username.trim().toLowerCase();
+  let match: DemoBuyer | null = null;
+  for (const l of demoBuyers()) {
+    const ok = timingSafeEqual(digest(l.username), digest(u)) && timingSafeEqual(digest(l.password), digest(password));
+    if (ok) match = l;
+  }
+  return match;
+}
+
+/**
+ * The demo buyer's profile, made the first time it signs in. Everything
+ * after that is the ordinary buyer desk: the agent's Hedera wallet is
+ * created there, and a MetaMask wallet can be linked.
+ */
+export async function ensureDemoBuyer(login: DemoBuyer): Promise<VerifiedIdentity> {
+  const nullifier = `demo-buyer:${login.username}`;
+  const existing = findIdentity(nullifier, "user");
+  if (existing) return existing;
+  return upsertIdentity({
+    nullifier,
+    role: "user",
+    label: "",
+    userId: nullifier,
+    // 4 shows as "KYC ✓": a Sangam demo account, not a Self scan.
+    attestationId: 4,
+    disclosed: { name: `${login.username} (Sangam demo buyer)` },
+  });
+}

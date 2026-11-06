@@ -70,6 +70,12 @@ export function LoginForm() {
           </a>
         </p>
         <p>
+          A buyer?{" "}
+          <a href="/buyer/login" className="text-accent underline-offset-2 hover:underline">
+            Buyer sign-in →
+          </a>
+        </p>
+        <p>
           New merchant?{" "}
           <a href="/verify?role=merchant&new=1" className="text-accent underline-offset-2 hover:underline">
             Verify with Self and claim your name →
