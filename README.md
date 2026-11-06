@@ -1,6 +1,6 @@
 # Sangam
 
-Sangam is a settlement rail for the agent economy. An AI agent pays an Indian merchant's API over x402 in USDC on Hedera. Sangam checks the payment on-chain, decides how to settle it with 0G Compute, pays the merchant in INR over UPI, and writes a hash-chained receipt to a Hedera Consensus Service (HCS) topic. Agents find merchants by ENS name; merchants and users prove who they are with an Aadhaar QR (Self offchain SDK) — in zero knowledge.
+Sangam is a settlement rail for the agent economy. An AI agent pays an Indian merchant's API over x402 in USDC on Hedera or USDT on Whitechain. Sangam checks the payment on-chain, decides how to settle it with 0G Compute, pays the merchant in INR over UPI, and writes a hash-chained receipt to a Hedera Consensus Service (HCS) topic. Agents find merchants by ENS name; merchants and users prove who they are with an Aadhaar QR (Self offchain SDK) — in zero knowledge.
 
 ```
 1  customer-agent looks up tickets.sangam.eth on ENS → URL, price, payTo, UPI ID
@@ -82,6 +82,30 @@ Fill in the customer keys, then on the dashboard click **Pay as agent** (a rail 
 ```bash
 npm run buy-ondc -- atta 1        # buy 10 kg atta through ONDC, paid in USDC
 ```
+
+## Second rail: USDT on Whitechain
+
+Every merchant invoice (the x402 402) offers two lines: **USDC on Hedera** and **USDT on Whitechain Sepolia** (chain 1874). The agent pays on whichever rail is picked (the "Agent pays on" switch on the dashboard and buyer desk); everything after the payment is the same pipeline.
+
+| Step | Hedera | Whitechain |
+|---|---|---|
+| Pay | x402, USDC, Blocky402 facilitator | x402, USDT signed with EIP-3009, **Sangam's own facilitator** (`/api/facilitator/whitechain`) |
+| Merchant receives | its own Hedera account (`sangam.payTo`) | its own derived address (`sangam.payTo.whitechain` in ENS) |
+| Verify | Mirror Node | the tx receipt's USDT `Transfer` logs |
+| Receipt | HCS topic, hash-chained | `SangamReceipts` contract, hash-chained on chain, one receipt per payment |
+| Refund (held payment) | scheduled transaction | gasless USDT transfer back to the payer |
+
+**The payer never holds gas.** The buyer's agent only signs; Sangam's relayer submits the transfer and pays the WBT. The relayer will only settle Whitechain USDT, by EIP-3009, into a Sangam merchant's deposit address, up to `WHITECHAIN_MAX_PER_PAYMENT`, six times a minute per payer, and never below a gas reserve — so it can't be drained. Details in [packages/whitechain/README.md](packages/whitechain/README.md).
+
+**Why on-chain stablecoin settlement:** an AI agent can't open a UPI account or pass a bank's KYC, but it can sign a stablecoin transfer. Settling USDT on Whitechain gives the merchant a payment anyone can verify and a receipt log nobody (Sangam included) can rewrite, with no card network or bank in between — then Sangam turns it into rupees on UPI.
+
+```bash
+npm run deploy-whitechain -- --key   # make the relayer key, fund it at https://faucet.testnet.whitechain.io
+npm run deploy-whitechain            # deploy + verify SangamReceipts → WHITECHAIN_RECEIPTS_ADDRESS
+npm run whitechain-ens               # publish the demo merchants' Whitechain addresses in ENS
+```
+
+Feedback on building with Whitechain: [WHITECHAIN_FEEDBACK.md](WHITECHAIN_FEEDBACK.md).
 
 ## Agent spending controls
 
