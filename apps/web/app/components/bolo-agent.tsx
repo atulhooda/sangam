@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BoloVoice, type Caption, type VoicePhase } from "../../lib/bolo-voice";
+import { BoloVoice, type Caption, type VoiceAction, type VoicePhase } from "../../lib/bolo-voice";
 import { AgentRunOverlay, runPayAsAgent, useAgentRun } from "./agent-run";
 import type { RobotState } from "./bolo-robot";
 
@@ -26,32 +26,6 @@ type Pos = { x: number; y: number };
 export type BuyTarget = { ensName: string; priceInrPaise?: number };
 
 const DEMO_CYCLE: Phase[] = ["connecting", "bolo", "listening", "thinking", "working", "ended", "error", "idle"];
-
-/** Words from an ENS name an agent might say out loud: "truffle-cake.bakery.sangam.eth" → ["truffle","cake","bakery"]. */
-function keywordsFor(ensName: string): string[] {
-  return ensName
-    .replace(/\.sangam\.eth$/i, "")
-    .replace(/\.eth$/i, "")
-    .split(/[.\-_\s]+/)
-    .map((w) => w.toLowerCase())
-    .filter((w) => w.length >= 3 && w !== "sangam");
-}
-/** Match spoken text to the best verified merchant in the list, or null. */
-function matchTarget(text: string, targets: BuyTarget[]): BuyTarget | null {
-  const t = ` ${text.toLowerCase()} `;
-  let best: BuyTarget | null = null;
-  let bestScore = 0;
-  for (const tg of targets) {
-    let score = 0;
-    for (const k of keywordsFor(tg.ensName)) if (t.includes(k)) score += k.length;
-    if (score > bestScore) {
-      bestScore = score;
-      best = tg;
-    }
-  }
-  return bestScore >= 3 ? best : null;
-}
-const CONFIRM_RE = /\b(haan|haa|haanji|ji haan|yes|yep|bhar ?do|bharo|kar ?do|khareed\w*|buy|le ?lo|pakka|confirm)\b/i;
 
 export function BoloAgent({
   role,
@@ -83,7 +57,6 @@ export function BoloAgent({
   targetsRef.current = targets ?? [];
   const targetRef = useRef<BuyTarget | null>(null);
   const buyingRef = useRef(false);
-  const confirmArmedAt = useRef(0);
 
   useEffect(() => {
     if (demo) return;
@@ -149,31 +122,39 @@ export function BoloAgent({
     return null;
   }, []);
 
-  const sayLine = (text: string) => {
+  /** Speak a line in Bolo's own (Sarvam) voice; the browser's robotic voice only if that fails. */
+  const sayLine = async (text: string) => {
     try {
-      if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = "hi-IN";
-      u.rate = 1;
-      window.speechSynthesis.speak(u);
+      const res = await fetch("/api/bolo/speak", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
+      const { audio } = (await res.json()) as { audio?: string };
+      if (!audio) throw new Error("no audio");
+      await new Audio(`data:audio/wav;base64,${audio}`).play();
     } catch {
-      /* speech not available */
+      try {
+        if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = "hi-IN";
+        window.speechSynthesis.speak(u);
+      } catch {
+        /* speech not available */
+      }
     }
   };
 
   // Buy the named merchant as the agent (the /api/agent/buy path: ENS checks,
   // fair-invoice, USDC on Hedera → the usual settlement pipeline).
   const doVoiceBuy = useCallback(
-    async (t: BuyTarget) => {
+    async (t: BuyTarget, saidByBolo = false) => {
       if (buyingRef.current) return;
       buyingRef.current = true;
       setPhase("working");
       setError(null);
-      sayLine(`Theek hai, ${t.ensName.replace(/\.sangam\.eth$/, "")} se khareed raha hoon.`);
+      // A spoken yes: Bolo already said "खरीद रही हूँ" on the call.
+      if (!saidByBolo) void sayLine(`ठीक है, ${t.ensName.replace(/\.sangam\.eth$/, "")} से खरीद रही हूँ।`);
       const { verdict } = await runPayAsAgent(agentRun.run, { title: "Buying by voice", target: t.ensName }, { ensName: t.ensName }, "/api/agent/buy");
       if (verdict.kind === "paid") {
         setBought(`${t.ensName} — ho gaya ✓`);
-        sayLine("Ho gaya! Payment complete.");
+        void sayLine("हो गया! पेमेंट पूरा हुआ।");
         onDone?.();
       } else {
         setError(verdict.kind === "refused" ? verdict.message : verdict.kind === "error" ? verdict.message : "Payment nahi hui.");
@@ -184,24 +165,18 @@ export function BoloAgent({
     [agentRun.run, onDone],
   );
 
-  // Drive voice-buy from what the buyer says: match a merchant, read the price
-  // back, and on a spoken "haan" (armed a moment after the read-back, so the
-  // read-back's own echo can't trigger it) make the purchase.
-  const onBuyerCaption = useCallback(
-    (text: string) => {
-      if (buyingRef.current || role !== "buyer" || targetsRef.current.length === 0) return;
-      const m = matchTarget(text, targetsRef.current);
-      if (m && m.ensName !== targetRef.current?.ensName) {
-        targetRef.current = m;
-        setTarget(m);
-        setBought(null);
-        const price = m.priceInrPaise ? ` lगभग ₹${(m.priceInrPaise / 100).toFixed(0)},` : "";
-        sayLine(`${m.ensName.replace(/\.sangam\.eth$/, "")} se,${price} bharu? Haan boliye.`);
-        confirmArmedAt.current = Date.now() + 1500;
-      }
-      if (targetRef.current && Date.now() >= confirmArmedAt.current && CONFIRM_RE.test(text) && !/bharu|boliye/i.test(text)) {
-        void doVoiceBuy(targetRef.current);
-      }
+  // Bolo runs the conversation on the voice server (it understands the shop
+  // name in Hindi, reads the price back in her own voice); the page acts on
+  // what she decides: show the shop she picked, and buy it on the buyer's yes.
+  const onAction = useCallback(
+    (a: VoiceAction) => {
+      if (role !== "buyer") return;
+      const t = targetsRef.current.find((x) => x.ensName === a.ensName);
+      if (!t) return;
+      targetRef.current = t;
+      setTarget(t);
+      setBought(null);
+      if (a.action === "buy") void doVoiceBuy(t, true);
     },
     [role, doVoiceBuy],
   );
@@ -230,28 +205,28 @@ export function BoloAgent({
         await fetch("/api/bolo/session", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ role }),
+          body: JSON.stringify({ role, ...(role === "buyer" ? { shops: targetsRef.current } : {}) }),
         })
       ).json()) as { session_id: string; ws_url: string; token: string; error?: string };
       if (created.error || !created.ws_url) throw new Error(created.error ?? "session refused");
       voice.current = new BoloVoice(created.ws_url, created.token, {
         onPhase: (p) => {
+          // Buyer: Bolo hangs up once she's said "खरीद रही हूँ"; the purchase
+          // is still running, so keep showing that rather than "ended".
+          if (buyingRef.current && (p === "ended" || p === "listening" || p === "bolo")) return;
           setPhase(p);
           // Merchant: on end, collect the invoice the voice server made.
-          // Buyer: the purchase is driven live from captions, so just idle.
           if (p === "ended" && role === "merchant") void merchantFinish(created.session_id);
         },
-        onCaption: (c) => {
-          setCaptions((prev) => [...prev.slice(-6), c]);
-          if (c.role === "buyer") onBuyerCaption(c.text);
-        },
+        onCaption: (c) => setCaptions((prev) => [...prev.slice(-6), c]),
+        onAction,
       });
       await voice.current.start();
     } catch (err) {
       setError((err as Error).message);
       setPhase("idle");
     }
-  }, [role, merchantFinish, onBuyerCaption]);
+  }, [role, merchantFinish, onAction]);
 
   const hangUp = useCallback(() => voice.current?.stop(), []);
 

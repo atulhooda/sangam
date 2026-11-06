@@ -1,5 +1,5 @@
 import WebSocket from "ws";
-import { sarvamReady, streamSpeech, sttUrl, warmSpeech, understandBuyer, understandMerchant, wavHeader, type InvoiceDraft } from "./sarvam";
+import { sarvamReady, shopLabel, streamSpeech, sttUrl, understandShop, warmSpeech, type Shop, understandBuyer, understandMerchant, wavHeader, type InvoiceDraft } from "./sarvam";
 
 /*
  * One live Bolo conversation. Mirrors Ritu's intake CallHandler: the wire
@@ -24,6 +24,8 @@ export type Script = {
   statusUrl?: string;
   /** Buyer sessions: whom they're paying. */
   buyerName?: string;
+  /** Buyer sessions with no invoice: the verified shops they can buy from by voice. */
+  shops?: Shop[];
 };
 
 export type CallbackResult = {
@@ -31,7 +33,9 @@ export type CallbackResult = {
   result?: {
     role: "merchant" | "buyer";
     invoice?: InvoiceDraft;
-    intent?: "pay";
+    intent?: "pay" | "buy";
+    /** intent "buy": the shop the buyer said yes to. */
+    ensName?: string;
   };
 };
 
@@ -143,7 +147,9 @@ export class BoloSession {
     const greeting =
       this.script.role === "merchant"
         ? "नमस्ते! मैं बोलो हूँ। बताइए, किसका बिल बनाना है और कितने का?"
-        : "नमस्ते! मैं बोलो हूँ। बिल के बारे में पूछिए, या बोलिए तो भर दूँ।";
+        : this.shopMode()
+          ? "नमस्ते! मैं बोलो हूँ। बताइए, किस दुकान से खरीदना है?"
+          : "नमस्ते! मैं बोलो हूँ। बिल के बारे में पूछिए, या बोलिए तो भर दूँ।";
     this.say(greeting);
   }
 
@@ -345,7 +351,53 @@ export class BoloSession {
 
   private status: { status: string; buyer: string; amountPaise: number } | null | undefined;
 
+  /** A buyer with no invoice, but shops to buy from: Bolo runs the purchase conversation. */
+  private shopMode() {
+    return !this.script.statusUrl && (this.script.shops?.length ?? 0) > 0;
+  }
+
+  private chosenShop: Shop | null = null;
+
+  /**
+   * Buying from a shop by voice. Bolo matches the shop, reads its price back
+   * once, and on a yes tells the browser to buy it (bolo_action), which runs
+   * the usual agent purchase: ENS checks, fair invoice, USDC, 0G, UPI, HCS.
+   */
+  private async shopTurn(said: string) {
+    const shops = this.script.shops ?? [];
+    const turn = await understandShop({ shops, transcript: this.transcript, said });
+    const priceOf = (s: Shop) => (s.priceInrPaise ? `, ${Math.round(s.priceInrPaise / 100).toLocaleString("en-IN")} रुपये` : "");
+    const buy = async (s: Shop) => {
+      this.wire.send(JSON.stringify({ event: "bolo_action", action: "buy", ensName: s.ensName }));
+      await this.end({ status: "completed", result: { role: "buyer", intent: "buy", ensName: s.ensName } }, `ठीक है, ${shopLabel(s.ensName)} से खरीद रही हूँ।`);
+    };
+    switch (turn.action) {
+      case "buy": {
+        const s = turn.shop ?? this.chosenShop;
+        if (!s) return this.say(`किस दुकान से? ${shops.slice(0, 4).map((x) => shopLabel(x.ensName)).join(", ")}?`);
+        // Money moves: once they've heard this shop's price, "le lo" buys; otherwise say it first.
+        if (this.chosenShop?.ensName === s.ensName && this.amountHeard) return buy(s);
+        this.chosenShop = s;
+        this.amountHeard = true;
+        this.wire.send(JSON.stringify({ event: "bolo_action", action: "pick", ensName: s.ensName }));
+        return this.say(`${shopLabel(s.ensName)} से${priceOf(s)}। खरीद लूँ?`);
+      }
+      case "yes":
+        if (this.chosenShop) return buy(this.chosenShop);
+        return this.say("किस दुकान से खरीदना है?");
+      case "no":
+        this.chosenShop = null;
+        this.amountHeard = false;
+        return this.say("ठीक है, नहीं खरीदा। किसी और दुकान से?");
+      case "ask":
+        return this.say(`ये दुकानें हैं: ${shops.slice(0, 4).map((x) => shopLabel(x.ensName)).join(", ")}। किससे खरीदूँ?`);
+      default:
+        return this.say(turn.reply ?? "जी। बताइए, किस दुकान से खरीदना है?");
+    }
+  }
+
   private async buyerTurn(said: string) {
+    if (this.shopMode()) return this.shopTurn(said);
     const [turn, s] = await Promise.all([
       understandBuyer({ transcript: this.transcript as { who: "bolo" | "buyer"; text: string }[], said }),
       this.status === undefined ? this.readStatus() : Promise.resolve(this.status),

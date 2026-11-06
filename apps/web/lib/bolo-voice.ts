@@ -27,9 +27,13 @@ export type VoicePhase = "connecting" | "bolo" | "listening" | "thinking" | "end
 
 export type Caption = { role: "bolo" | "merchant" | "buyer"; text: string };
 
+/** Bolo decided something the page acts on: "pick" (a shop was named, price read back) or "buy" (the buyer said yes). */
+export type VoiceAction = { action: "pick" | "buy"; ensName: string };
+
 export interface VoiceEvents {
   onPhase: (phase: VoicePhase, detail?: string) => void;
   onCaption?: (caption: Caption) => void;
+  onAction?: (action: VoiceAction) => void;
 }
 
 function downsample(input: Float32Array, from: number, to: number): Float32Array {
@@ -170,7 +174,7 @@ export class BoloVoice {
   }
 
   private handle(raw: string) {
-    let msg: { event?: string; media?: { payload?: string; sample_rate?: number }; mark?: { name?: string }; role?: string; text?: string };
+    let msg: { event?: string; media?: { payload?: string; sample_rate?: number }; mark?: { name?: string }; role?: string; text?: string; action?: string; ensName?: string };
     try {
       msg = JSON.parse(raw);
     } catch {
@@ -209,6 +213,8 @@ export class BoloVoice {
       this.playing = [];
       this.playEnd = this.ctx?.currentTime ?? 0;
       this.setPhase("listening");
+    } else if (msg.event === "bolo_action" && (msg.action === "pick" || msg.action === "buy") && msg.ensName) {
+      this.events.onAction?.({ action: msg.action, ensName: msg.ensName });
     } else if (msg.event === "bolo_caption" && msg.text) {
       const role = msg.role === "bolo" || msg.role === "merchant" || msg.role === "buyer" ? msg.role : "bolo";
       this.events.onCaption?.({ role, text: msg.text });

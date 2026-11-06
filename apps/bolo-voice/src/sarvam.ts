@@ -210,6 +210,34 @@ export async function understandBuyer(input: { transcript: { who: "bolo" | "buye
   return { action, reply: reply && !/\d/.test(reply) && reply.length < 200 ? reply : null };
 }
 
+export type Shop = { ensName: string; priceInrPaise?: number };
+export type ShopAction = "buy" | "yes" | "no" | "ask" | "chitchat";
+export const shopLabel = (ensName: string) => ensName.replace(/\.sangam\.eth$/, "").replace(/\.eth$/, "");
+
+const SHOP_SYSTEM = `You are Bolo (a woman: always feminine Hindi verb forms, "सकती हूँ", "करती हूँ"), a friendly voice assistant that buys from shops for an Indian buyer, in Hindi/Hinglish.
+You get the list of shops the buyer can buy from, the conversation, and the buyer's latest words (speech recognition: shop names may come in Devanagari, e.g. "बेकरी" = bakery, "टिकट" = tickets).
+Answer ONLY with JSON: {"shop": string|null, "action": "buy"|"yes"|"no"|"ask"|"chitchat", "reply": string}
+- shop: the ensName from the list the buyer means (match by meaning/sound), or null. Never a shop not in the list.
+- "buy": wants to buy from a shop ("bakery se khareedo", "ticket le lo"). "yes"/"no": answering your last question ("haan", "theek hai" / "nahi", "ruko").
+- "ask": wants to buy but didn't say which shop, or asks what's available. "chitchat": anything else.
+reply: only for "chitchat": one short, warm Hindi sentence in Devanagari steering back to buying. You only know these shops: never state other facts. No numbers. Otherwise "".`;
+
+/** Which shop the buyer means, and whether they're asking, agreeing or refusing. */
+export async function understandShop(input: { shops: Shop[]; transcript: { who: string; text: string }[]; said: string }): Promise<{ shop: Shop | null; action: ShopAction; reply: string | null }> {
+  const list = input.shops.map((s) => `${s.ensName} (${shopLabel(s.ensName)}${s.priceInrPaise ? `, ₹${Math.round(s.priceInrPaise / 100)}` : ""})`).join("\n");
+  const convo = input.transcript.slice(-6).map((t) => `${t.who === "bolo" ? "Bolo" : "Buyer"}: ${t.text}`).join("\n");
+  const raw = await chat([
+    { role: "system", content: SHOP_SYSTEM },
+    { role: "user", content: `Shops:\n${list}\nConversation:\n${convo || "(none)"}\nBuyer now said: "${input.said}"` },
+  ]);
+  const d = parseJson(raw);
+  const shop = input.shops.find((s) => s.ensName === clean(d.shop)) ?? null;
+  let action: ShopAction = (["buy", "yes", "no", "ask", "chitchat"] as const).includes(d.action as ShopAction) ? (d.action as ShopAction) : "chitchat";
+  if (saysNo(input.said) && (action === "buy" || action === "yes" || action === "chitchat")) action = "no";
+  const reply = action === "chitchat" ? clean(d.reply) : null;
+  return { shop, action, reply: reply && !/\d/.test(reply) && reply.length < 200 ? reply : null };
+}
+
 /* ── TTS: text → mono PCM16 at the wire rate, cached ── */
 
 /** Bolo's voice goes out at 24 kHz (Bulbul's native quality), not phone-band 8 kHz. */

@@ -19,7 +19,7 @@ const API = "https://api.sarvam.ai";
 
 const STT_MODEL = () => envOr("SARVAM_STT_MODEL", "saaras:v4");
 const TTS_MODEL = () => envOr("SARVAM_TTS_MODEL", "bulbul:v4-flash");
-const TTS_SPEAKER = () => envOr("SARVAM_TTS_SPEAKER", "simran_en_customer");
+const TTS_SPEAKER = () => envOr("SARVAM_TTS_SPEAKER", "simran_hi_assistant");
 const LLM_MODEL = () => envOr("SARVAM_LLM_MODEL", "sarvam-105b");
 
 /** True when SARVAM_API_KEY is set — gates the Bolo panels in the UI. */

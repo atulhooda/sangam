@@ -38,6 +38,8 @@ export async function createVoiceSession(script: {
   actor: string;
   statusUrl?: string;
   buyerName?: string;
+  /** Buyer, no invoice: the verified shops Bolo can buy from by voice. */
+  shops?: { ensName: string; priceInrPaise?: number }[];
 }): Promise<VoiceSession> {
   const base = envOr("BOLO_VOICE_URL", "").replace(/\/$/, "");
   const body = JSON.stringify({
