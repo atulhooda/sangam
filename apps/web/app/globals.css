@@ -3,44 +3,51 @@
 /* Dark mode is class-driven (html.dark) so the toggle can override the OS setting */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Sangam palette — warm cream/orange */
+/* Sangam palette, after Kamai: cool paper + electric violet.
+   Violet carries the brand; blue (info) is USDC moving, green is rupees out. */
 @theme {
-  --color-bg: #f7f5f0;
-  --color-surface: #ffffff;
-  --color-surface2: #faf8f4;
-  --color-ink: #1c1b19;
-  --color-muted: #6b6760;
-  --color-line: #e4e0d8;
-  --color-accent: #b5541c;
-  --color-accentbg: #fbeee5;
-  --color-ok: #1f7a4d;
-  --color-okbg: #e3f2ea;
-  --color-warn: #8a5a00;
-  --color-warnbg: #fbefd5;
-  --color-bad: #a3271f;
-  --color-badbg: #f8e1df;
-  --color-info: #3d5a80;
-  --color-infobg: #e3eaf3;
+  --color-bg: #f4f3f7;
+  --color-surface: #fbfbfd;
+  --color-surface2: #f0eff5;
+  --color-ink: #16151d;
+  --color-muted: #73727e;
+  --color-line: #e3e2ea;
+  --color-accent: #6d4aff;
+  --color-accent-deep: #5536d9;
+  --color-accentbg: #ebe6ff;
+  --color-ok: #0a8f0a;
+  --color-okbg: #e4f3e4;
+  --color-warn: #b7791f;
+  --color-warnbg: #f8efdc;
+  --color-bad: #d03b3b;
+  --color-badbg: #fbe4e4;
+  --color-info: #2a78d6;
+  --color-infobg: #e5edf7;
+  --color-cost: #eb6834;
+  --color-kept: #1baf7a;
 }
 
 /* Dark tokens applied when html carries the .dark class */
 html.dark {
-  --color-bg: #151412;
-  --color-surface: #1e1d1a;
-  --color-surface2: #24221f;
-  --color-ink: #ece9e2;
-  --color-muted: #a19c93;
-  --color-line: #33312c;
-  --color-accent: #e98a4f;
-  --color-accentbg: #3a2416;
-  --color-ok: #6fd3a0;
-  --color-okbg: #173226;
+  --color-bg: #0e0d13;
+  --color-surface: #191822;
+  --color-surface2: #201f2b;
+  --color-ink: #efeff4;
+  --color-muted: #a4a3af;
+  --color-line: #2e2d3a;
+  --color-accent: #977dff;
+  --color-accent-deep: #b39dff;
+  --color-accentbg: #241e3d;
+  --color-ok: #35c135;
+  --color-okbg: #17301c;
   --color-warn: #f0c062;
   --color-warnbg: #3a2e12;
-  --color-bad: #f08a80;
-  --color-badbg: #3b1a17;
-  --color-info: #9bb8e0;
+  --color-bad: #e06456;
+  --color-badbg: #3b1a1a;
+  --color-info: #3987e5;
   --color-infobg: #1c2836;
+  --color-cost: #d95926;
+  --color-kept: #199e70;
 }
 
 html {
@@ -72,6 +79,12 @@ body {
 
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Display serif for headlines (Kamai's editorial voice), no webfont needed */
+.display {
+  font-family: "Iowan Old Style", Georgia, "Times New Roman", serif;
+  letter-spacing: -0.01em;
 }
 
 /* Keyboard focus: a clear accent ring on anything focusable (mouse clicks don't show it) */

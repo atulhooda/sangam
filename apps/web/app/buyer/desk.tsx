@@ -189,7 +189,7 @@ export function BuyerDesk({ me }: { me: Me }) {
       <main className="mx-auto max-w-5xl space-y-5 px-5 py-6 sm:py-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Your shopping agent</h1>
+            <h1 className="display text-xl font-semibold tracking-tight sm:text-2xl">Your shopping agent</h1>
             <p className="mt-1 text-sm text-muted">It pays merchants in USDC on Hedera, with no approval step. They get rupees on UPI.</p>
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-okbg px-3 py-1 text-xs font-medium text-ok" title={`Verified via Self${me.name ? ` — ${me.name}` : ""}`}>
@@ -227,7 +227,7 @@ export function BuyerDesk({ me }: { me: Me }) {
               <button
                 onClick={connect}
                 disabled={busy !== null}
-                className="shrink-0 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#1a1917]"
+                className="shrink-0 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0e0d13]"
               >
                 {busy === "connect" ? "Creating account…" : "Connect agent wallet"}
               </button>
@@ -286,7 +286,7 @@ export function BuyerDesk({ me }: { me: Me }) {
                     checked={picked.has(m.ensName) && !!m.verified}
                     disabled={!m.verified || running}
                     onChange={() => toggle(m.ensName)}
-                    className="h-4 w-4 accent-[var(--color-accent,#b5541c)]"
+                    className="h-4 w-4 accent-[var(--color-accent,#6d4aff)]"
                   />
                   <div className="min-w-0 flex-1">
                     <p className="mono truncate text-sm font-medium">{m.ensName}</p>
@@ -329,7 +329,7 @@ export function BuyerDesk({ me }: { me: Me }) {
             <button
               onClick={() => runAgent(pickedList)}
               disabled={!w || running || pickedList.length === 0}
-              className="rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#1a1917]"
+              className="rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0e0d13]"
             >
               {running ? "Agent is paying…" : `3 · Run agent on ${pickedList.length} merchant${pickedList.length === 1 ? "" : "s"} →`}
             </button>

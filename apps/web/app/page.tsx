@@ -43,7 +43,7 @@ export default function Home() {
         <p className="mb-4 inline-block rounded-full bg-accentbg px-3 py-1 text-xs font-medium text-accent">
           Settlement rail for the agent economy
         </p>
-        <h1 className="mx-auto max-w-3xl text-4xl font-bold tracking-tight sm:text-6xl">
+        <h1 className="display mx-auto max-w-3xl text-4xl font-semibold tracking-tight sm:text-6xl">
           Agents pay in <span className="text-accent">USDC</span>.
           <br />
           Merchants get <span className="text-accent">rupees</span>.

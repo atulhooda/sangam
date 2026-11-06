@@ -49,7 +49,7 @@ export function AccountMenu({ me: initial }: { me?: Me | null }) {
 
   if (!me) {
     return (
-      <a href="/verify" className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 dark:text-[#1a1917]">
+      <a href="/verify" className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 dark:text-[#0e0d13]">
         Sign in
       </a>
     );
