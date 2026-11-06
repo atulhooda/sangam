@@ -5,6 +5,7 @@ import type { EnsView, Me, Settlement } from "@/lib/types";
 import { Card, CardHead, LedgerRow, MockTag, Spinner, StatusPill, idBadge } from "../../components/ui";
 import { Logo } from "../../components/space/kit";
 import { AccountMenu } from "../../components/account-menu";
+import { ShopSettings } from "./shop-settings";
 import { clock, hashscanTopic, hashscanTx, isSimTx, rupees, timeAgo, usdc } from "../../dashboard/format";
 
 /*
@@ -206,8 +207,6 @@ export function MerchantDesk({ name, me: initialMe }: { name: string; me: Me }) 
                   )
                 }
               />
-              <LedgerRow k="UPI payouts" v={<span className="mono text-xs">{me.shop.upiHandle}</span>} />
-              <LedgerRow k="Price per order" v={<span className="text-xs">{rupees(me.shop.priceInrPaise)}</span>} />
               <LedgerRow k="Agents buy at" v={<span className="mono block max-w-[260px] truncate text-[11px]" title={me.shop.publishedUrl ?? ""}>{me.shop.publishedUrl ?? "—"}</span>} />
               {me.shop.ensTxs.map((t) => (
                 <LedgerRow
@@ -221,6 +220,7 @@ export function MerchantDesk({ name, me: initialMe }: { name: string; me: Me }) 
                 />
               ))}
             </div>
+            {me.shop.provisionedAt && <ShopSettings me={me} onSaved={setMe} />}
             {!me.shop.provisionedAt && (
               <div className="flex flex-col gap-2 px-5 pb-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs text-bad">{retryError ?? me.shop.error ?? "Setup hasn't finished."} Agents can't pay you until it does.</p>
