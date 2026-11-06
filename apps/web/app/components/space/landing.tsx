@@ -327,9 +327,9 @@ export function CardsHero() {
   ];
 
   return (
-    <section className="relative isolate overflow-hidden bg-[#05060d] pb-16 pt-24 sm:pb-20 sm:pt-32">
+    <section className="relative isolate overflow-hidden bg-bg pb-16 pt-24 sm:pb-20 sm:pt-32">
       <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden>
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,#05060d_0%,#080a1c_55%,#0d0f2e_100%)]" />
+        <div className="section-night absolute inset-0" />
         <div className="absolute -bottom-[20%] -right-[10%] h-[85%] w-[75%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(79,70,229,0.55),rgba(67,56,202,0.18)_45%,transparent_70%)] blur-3xl" />
         <div className="absolute -bottom-[30%] left-[10%] h-[50%] w-[60%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(67,56,202,0.35),transparent_70%)] blur-3xl" />
       </div>
@@ -435,7 +435,7 @@ export function LayerStack() {
   }, [reduce]);
 
   return (
-    <section id="layers" ref={ref} className="relative isolate overflow-hidden bg-[#05060d] py-24 sm:py-32">
+    <section id="layers" ref={ref} className="relative isolate overflow-hidden bg-bg py-24 sm:py-32">
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_60%_50%_at_70%_55%,rgba(67,56,202,0.35),transparent_70%)]" />
       <FloorGrid className="-z-10 h-1/2" />
       <div className="mx-auto grid max-w-6xl items-center gap-14 px-5 lg:grid-cols-[1fr_1.1fr]">
@@ -483,7 +483,7 @@ export function LayerStack() {
 
 export function CTABand() {
   return (
-    <section className="relative isolate overflow-hidden bg-[#05060d] pb-40 pt-24 text-center">
+    <section className="relative isolate overflow-hidden bg-bg pb-40 pt-24 text-center">
       <Starfield count={50} className="-z-10 opacity-60" />
       <Horizon className="bottom-0 -z-10 h-[260px]" />
       <div className="mx-auto max-w-3xl px-5">
@@ -505,7 +505,7 @@ export function CTABand() {
 
 export function Footer() {
   return (
-    <footer className="relative border-t border-white/[0.06] bg-[#05060d]">
+    <footer className="relative border-t border-white/[0.06] bg-bg">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-6 px-5 py-10 text-sm text-white/45">
         <div className="flex flex-col gap-2">
           <Logo />

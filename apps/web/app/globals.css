@@ -97,8 +97,8 @@
   --color-white: #ffffff;
   --color-black: #000000;
 }
-/* Text on the (now deep indigo) accent stays white in light mode */
-:root:not(.dark) .bg-accent {
+/* Text on a solid colour fill (accent, ok, warn, bad, info, indigo) stays white in light mode */
+:root:not(.dark) :is(.bg-accent, .bg-ok, .bg-warn, .bg-bad, .bg-info, .bg-indigo, .bg-indigo-deep) {
   --color-white: #ffffff;
 }
 
@@ -177,6 +177,14 @@ body {
 /* The space backdrop's top haze is a dark band on paper: keep it faint */
 :root:not(.dark) .space-glow {
   opacity: 0.12;
+}
+
+/* A landing section's night sky: deepening navy in dark mode, a soft lavender wash in light mode */
+.section-night {
+  background: linear-gradient(180deg, #05060d 0%, #080a1c 55%, #0d0f2e 100%);
+}
+:root:not(.dark) .section-night {
+  background: linear-gradient(180deg, #f5f6fb 0%, #eceefa 55%, #e2e4f7 100%);
 }
 
 /* The landing page's planet horizon: night side in dark mode, a pale dawn in light mode */

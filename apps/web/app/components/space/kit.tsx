@@ -258,7 +258,7 @@ export function Horizon({ className = "" }: { className?: string }) {
   return (
     <div className={`pointer-events-none absolute inset-x-0 overflow-hidden ${className}`} aria-hidden>
       <div className="absolute left-1/2 top-0 h-[60%] w-[140%] -translate-x-1/2 rounded-[100%] bg-[radial-gradient(ellipse_at_center,rgba(99,102,241,0.85),rgba(79,70,229,0.35)_40%,transparent_70%)] blur-2xl" />
-      <div className="absolute left-1/2 top-[22%] h-[200%] w-[160%] -translate-x-1/2 rounded-[100%] border-t border-white/70 bg-[#05060d] shadow-[0_-20px_80px_10px_rgba(129,140,248,0.55),inset_0_30px_60px_-30px_rgba(165,180,252,0.35)]" />
+      <div className="absolute left-1/2 top-[22%] h-[200%] w-[160%] -translate-x-1/2 planet-rim rounded-[100%] border-t border-white/70 bg-bg shadow-[0_-20px_80px_10px_rgba(129,140,248,0.55),inset_0_30px_60px_-30px_rgba(165,180,252,0.35)]" />
     </div>
   );
 }
@@ -268,7 +268,7 @@ export function NavyGlow({ className = "" }: { className?: string }) {
   return (
     <div className={`pointer-events-none absolute inset-0 ${className}`} aria-hidden>
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_75%,rgba(67,56,202,0.40),transparent_70%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,#05060d,transparent_30%,transparent_70%,#05060d)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,var(--color-bg),transparent_30%,transparent_70%,var(--color-bg))]" />
     </div>
   );
 }
