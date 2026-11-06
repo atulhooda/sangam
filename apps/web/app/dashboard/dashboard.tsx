@@ -6,7 +6,7 @@ import { AgentRunOverlay, runPayAsAgent, useAgentRun, type RunOutcome } from "..
 import { Card, CardHead, LedgerRow, MockTag, RailBadge, Spinner, StatusPill } from "../components/ui";
 import { Logo } from "../components/space/kit";
 import { AccountMenu } from "../components/account-menu";
-import { RAIL_NAME, clock, explorerName, explorerTx, hashscanTopic, isInFlight, isSimTx, railOf, receiptLink, refundUrl, rupees, shortHash, shortId, shortTx, timeAgo, tokenOf, usdc } from "./format";
+import { RAIL_NAME, clock, explorerName, explorerTx, settlementTxUrl, hashscanTopic, isInFlight, isSimTx, railOf, receiptLink, refundUrl, rupees, shortHash, shortId, shortTx, timeAgo, tokenOf, usdc } from "./format";
 import { UrlBuyCard } from "./url-buy-card";
 
 /* ───────────────────────── data ───────────────────────── */
@@ -380,7 +380,7 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
               isSimTx(s.hederaTxId) ? (
                 <span className="mono text-xs text-muted" title={s.hederaTxId}>simulated</span>
               ) : (
-                <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={explorerTx(s.hederaTxId)} target="_blank" rel="noreferrer">
+                <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={settlementTxUrl(s)} target="_blank" rel="noreferrer">
                   {shortTx(s.hederaTxId)} ↗
                 </a>
               )

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Settlement } from "@/lib/types";
 import { Tilt3D } from "./space/kit";
-import { RAIL_NAME, type Rail, explorerTx, isInFlight, isSimTx, railOf, receiptLink, refundUrl, shortTx, tokenOf, usdc } from "../dashboard/format";
+import { RAIL_NAME, type Rail, explorerTx, settlementTxUrl, isInFlight, isSimTx, railOf, receiptLink, refundUrl, shortTx, tokenOf, usdc } from "../dashboard/format";
 
 /* Small shared pieces the settlement, merchant and buyer desks all use. */
 
@@ -105,7 +105,7 @@ export function ProofRows({ s }: { s: Settlement }) {
           isSimTx(s.hederaTxId) ? (
             <span className="mono text-xs text-muted" title={s.hederaTxId}>simulated</span>
           ) : (
-            <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={explorerTx(s.hederaTxId)} target="_blank" rel="noreferrer">
+            <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={settlementTxUrl(s)} target="_blank" rel="noreferrer">
               {shortTx(s.hederaTxId)} ↗
             </a>
           )
@@ -137,11 +137,15 @@ export function ProofRows({ s }: { s: Settlement }) {
   );
 }
 
-/** A small "Hedera" chip for a settlement row. */
-export function RailBadge({ s }: { s: Pick<Settlement, "hederaTxId"> }) {
+/** A small "Hedera" / "Sepolia" chip for a settlement row. */
+export function RailBadge({ s }: { s: Pick<Settlement, "rail" | "hederaTxId"> }) {
+  const rail = railOf(s);
   return (
-    <span className="mono rounded bg-okbg px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-ok" title="Paid in USDC on Hedera">
-      {RAIL_NAME[railOf(s)]}
+    <span
+      className={`mono rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${rail === "sepolia" ? "bg-warnbg text-warn" : "bg-okbg text-ok"}`}
+      title={rail === "sepolia" ? "Paid in USDC from the buyer's own wallet (Sepolia)" : "Paid in USDC on Hedera"}
+    >
+      {RAIL_NAME[rail]}
     </span>
   );
 }
@@ -161,7 +165,7 @@ export function RailToggle({ rail, onChange, rails }: { rail: Rail; onChange: (r
           onClick={() => onChange(r)}
           className={`rounded-full px-3 py-1 transition-colors ${rail === r ? "bg-accent text-bg" : "text-muted hover:text-ink"}`}
         >
-          {RAIL_NAME[r]} · USDC
+          {r === "sepolia" ? "MetaMask" : RAIL_NAME[r]} · USDC
         </button>
       ))}
     </div>
@@ -176,7 +180,7 @@ export function useRail(): [Rail, (r: Rail) => void] {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(RAIL_KEY);
-      if (saved === "hedera") setRail(saved);
+      if (saved === "hedera" || saved === "sepolia") setRail(saved);
     } catch {
       /* storage blocked: keep the default */
     }

@@ -74,11 +74,25 @@ export async function assertVerifiedPayee(invoice: InvoiceOption): Promise<Trust
     }
     if (shop.status === "suspended") throw new UntrustedPayeeError(`Refused: ${shopName}, which sells ${ensName}, is suspended.`, "suspended");
     if (shop.status !== "verified") throw new UntrustedPayeeError(`Refused: ${shopName}, which sells ${ensName}, has not been verified by Sangam.`, "unverified");
-    if (shop.hederaPayTo !== record.hederaPayTo) {
+    const evmDiffers = !!record.evmPayTo && record.evmPayTo.toLowerCase() !== (shop.evmPayTo ?? "").toLowerCase();
+    if (shop.hederaPayTo !== record.hederaPayTo || evmDiffers) {
       throw new UntrustedPayeeError(`Refused: ${ensName} pays somewhere other than its shop ${shopName}.`, "payto-mismatch");
     }
   }
 
+  // A wallet payment (Sepolia) goes to the name's standard address record, not sangam.payTo.
+  if (invoice.network === SEPOLIA_NETWORK) {
+    if (!record.evmPayTo) {
+      throw new UntrustedPayeeError(`Refused: ${ensName} has no address record for wallet payments.`, "network-mismatch");
+    }
+    if (record.evmPayTo.toLowerCase() !== invoice.payTo.toLowerCase()) {
+      throw new UntrustedPayeeError(
+        `Refused: the payment would go to ${invoice.payTo}, but ${ensName}'s ENS address record says ${record.evmPayTo}. This looks like an impersonation.`,
+        "payto-mismatch",
+      );
+    }
+    return { ensName, payTo: record.evmPayTo, status: record.status };
+  }
   if (record.hederaPayTo !== invoice.payTo) {
     throw new UntrustedPayeeError(
       `Refused: the invoice asks for payment to ${invoice.payTo}, but ${ensName}'s ENS record says ${record.hederaPayTo}. This looks like an impersonation.`,
@@ -90,6 +104,9 @@ export async function assertVerifiedPayee(invoice: InvoiceOption): Promise<Trust
   }
   return { ensName, payTo: record.hederaPayTo, status: record.status };
 }
+
+/** Sepolia, where the buyer's own wallet pays (Circle USDC). */
+const SEPOLIA_NETWORK = "eip155:11155111";
 
 /**
  * Exchange-rate wiggle room for the price check, in basis points (2%). The

@@ -1,10 +1,13 @@
 import "server-only";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import type { Hex } from "viem";
 import { mirrorNodeUrl, usdcTokenId } from "@sangam/hedera";
 import { DATA_DIR, inrPerUsd, usdcAtomicToPaise } from "@sangam/shared";
 import { listDepositAccounts } from "./identity";
 import { DuplicateSettlementError, acceptNotice, runPipeline } from "./pipeline";
+import { depositAddress, evmWalletEnabled, knownMerchantNames } from "./evm-keys";
+import { sepoliaBlockNumber, transfersTo } from "./sepolia";
 import { findByTx } from "./store";
 
 /*
@@ -125,9 +128,49 @@ export async function watchDeposits(): Promise<WatchResult> {
         result.errors.push(`${ensName}: ${(err as Error).message}`);
       }
     }
+    // The wallet rail: USDC sent to a merchant's ENS name on Sepolia (its
+    // standard address record, from any wallet) becomes rupees too.
+    if (evmWalletEnabled()) {
+      try {
+        await watchSepolia(cursors, result);
+      } catch (err) {
+        result.errors.push(`sepolia: ${(err as Error).message.split("\n")[0]}`);
+      }
+    }
     writeCursors(cursors);
     return result;
   } finally {
     g.__sangamWatching = false;
   }
+}
+
+/** Sepolia blocks are ~12 s apart; wait a few before claiming a transfer so the agent's own notice wins. */
+const SEPOLIA_GRACE_BLOCKS = 3n;
+
+async function watchSepolia(cursors: Record<string, string>, result: WatchResult) {
+  const byAddress = new Map(knownMerchantNames().map((n) => [depositAddress(n).toLowerCase(), n]));
+  const latest = (await sepoliaBlockNumber()) - SEPOLIA_GRACE_BLOCKS;
+  const from = cursors["sepolia:block"] ? BigInt(cursors["sepolia:block"]) + 1n : latest - 200n;
+  if (from > latest) return;
+  const to = from + 1_000n < latest ? from + 1_000n : latest;
+  for (const log of await transfersTo([...byAddress.keys()] as Hex[], from, to)) {
+    const merchant = byAddress.get(log.args.to.toLowerCase());
+    if (!merchant || !log.transactionHash || findByTx(log.transactionHash)) continue;
+    try {
+      const settlement = await acceptNotice({
+        merchant,
+        hederaTxId: log.transactionHash,
+        rail: "sepolia",
+        payer: log.args.from,
+        usdcAmount: log.args.value.toString(),
+        quotedInrPaise: usdcAtomicToPaise(log.args.value, await inrPerUsd()),
+        source: "transfer",
+      });
+      result.claimed.push({ merchant, hederaTxId: log.transactionHash, usdcAmount: log.args.value.toString() });
+      void runPipeline(settlement);
+    } catch (err) {
+      if (!(err instanceof DuplicateSettlementError)) throw err;
+    }
+  }
+  cursors["sepolia:block"] = to.toString();
 }

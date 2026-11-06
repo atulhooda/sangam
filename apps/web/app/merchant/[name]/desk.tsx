@@ -8,7 +8,7 @@ import { AccountMenu } from "../../components/account-menu";
 import { ShopSettings } from "./shop-settings";
 import { BoloPanel } from "./bolo";
 import { ProductsCard } from "./products";
-import { clock, explorerTx, isSimTx, receiptLink, rupees, timeAgo, usdc } from "../../dashboard/format";
+import { clock, explorerTx, settlementTxUrl, isSimTx, receiptLink, rupees, timeAgo, usdc } from "../../dashboard/format";
 
 /*
  * The merchant desk: everything this merchant cares about, and nothing else.
@@ -164,7 +164,7 @@ export function MerchantDesk({ name, me: initialMe }: { name: string; me: Me }) 
                         {isSimTx(s.hederaTxId) ? (
                           <MockTag>simulated</MockTag>
                         ) : (
-                          <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={explorerTx(s.hederaTxId)} target="_blank" rel="noreferrer">
+                          <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={settlementTxUrl(s)} target="_blank" rel="noreferrer">
                             {s.hederaTxId.slice(0, 14)}… ↗
                           </a>
                         )}

@@ -17,3 +17,9 @@ export const MERCHANT_FIELDS = Object.keys(MERCHANT_TEXT_KEYS) as MerchantField[
 export const STATUS_TEXT_KEY = "sangam.status";
 
 export type MerchantStatus = "verified" | "suspended";
+
+/**
+ * The standard ENS address record (ENSIP-9, coin type 60) for the merchant's
+ * EVM deposit address, so any wallet resolves "bakery.sangam.eth" to it.
+ */
+export const EVM_COIN_TYPES = [60n] as const;

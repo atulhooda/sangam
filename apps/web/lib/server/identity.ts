@@ -92,6 +92,8 @@ export type VerifiedIdentity = {
   shop?: MerchantShop;
   /** Buyers only: the agent's own Hedera wallet. */
   wallet?: BuyerWallet;
+  /** Buyers only: their own MetaMask address on Sepolia, proven by a signature; the agent spends from it within an allowance. */
+  evmWallet?: { address: string; linkedAt: string };
   verifiedAt: string;
   updatedAt: string;
 };
@@ -143,7 +145,7 @@ export class LabelTakenError extends Error {}
  * Re-verifying refreshes the disclosures and keeps the certificate.
  */
 export async function upsertIdentity(
-  identity: Omit<VerifiedIdentity, "verifiedAt" | "updatedAt" | "cert" | "shop" | "wallet" | "password">,
+  identity: Omit<VerifiedIdentity, "verifiedAt" | "updatedAt" | "cert" | "shop" | "wallet" | "password" | "evmWallet">,
 ): Promise<VerifiedIdentity> {
   return withLock((items) => {
     // Signing in again with Self (no name given) keeps the name already claimed.
@@ -232,6 +234,17 @@ export async function setBuyerWallet(nullifier: string, wallet: BuyerWallet): Pr
     const row = items.find((i) => i.nullifier === nullifier && i.role === "user");
     if (!row) throw new Error("no buyer identity for this session");
     row.wallet = wallet;
+    row.updatedAt = new Date().toISOString();
+    return { ...row };
+  });
+}
+
+export async function setBuyerEvmWallet(nullifier: string, evmWallet: VerifiedIdentity["evmWallet"]): Promise<VerifiedIdentity> {
+  return withLock((items) => {
+    const row = items.find((i) => i.nullifier === nullifier && i.role === "user");
+    if (!row) throw new Error("no buyer identity for this session");
+    if (evmWallet) row.evmWallet = evmWallet;
+    else delete row.evmWallet;
     row.updatedAt = new Date().toISOString();
     return { ...row };
   });

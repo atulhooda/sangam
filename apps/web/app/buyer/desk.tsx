@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Me, Settlement } from "@/lib/types";
 import { AgentRunOverlay, runPayAsAgent, useAgentRun } from "../components/agent-run";
-import { Card, CardHead, MockTag, RailBadge, Spinner, StatusPill, idBadge } from "../components/ui";
+import { Card, CardHead, MockTag, RailBadge, RailToggle, Spinner, StatusPill, idBadge, useRail } from "../components/ui";
 import { Logo } from "../components/space/kit";
+import { MetaMaskCard, type MetaMaskView } from "./metamask";
 import { AccountMenu } from "../components/account-menu";
 import { BoloBuyer } from "./bolo-pay";
-import { clock, explorerName, explorerTx, isSimTx, receiptLink, rupees, timeAgo, tokenOf, usdc } from "../dashboard/format";
+import { RAIL_NAME, clock, explorerName, explorerTx, settlementTxUrl, isSimTx, railOf, receiptLink, rupees, timeAgo, tokenOf, usdc } from "../dashboard/format";
 
 /*
  * The buyer desk: the buyer's AI agent and everything it pays for.
@@ -63,6 +64,9 @@ export function BuyerDesk({ me }: { me: Me }) {
   const [notice, setNotice] = useState<{ ok: boolean; text: string; href?: string } | null>(null);
   const [denied, setDenied] = useState(false);
   const badge = idBadge(me.attestationId);
+  const [railPref, setRail] = useRail();
+  const [metamask, setMetamask] = useState<MetaMaskView | null>(null);
+  const onMetamask = useCallback((v: MetaMaskView | null) => setMetamask(v), []);
 
   // Sent here from a merchant desk? Say why.
   useEffect(() => {
@@ -90,13 +94,14 @@ export function BuyerDesk({ me }: { me: Me }) {
 
   // Live transactions: every settlement this wallet paid, refreshed every 2 s.
   const accountId = wallet?.wallet?.accountId ?? null;
+  const mmAddress = metamask?.address?.toLowerCase() ?? null;
   useEffect(() => {
     if (!accountId) return;
     let alive = true;
     const tick = async () => {
       try {
         const rows = (await (await fetch("/api/settlements", { cache: "no-store" })).json()) as Settlement[];
-        if (alive) setSettlements(rows.filter((s) => s.payer === accountId));
+        if (alive) setSettlements(rows.filter((s) => s.payer === accountId || (!!mmAddress && s.payer?.toLowerCase() === mmAddress)));
       } catch {
         /* next tick */
       }
@@ -107,7 +112,7 @@ export function BuyerDesk({ me }: { me: Me }) {
       alive = false;
       clearInterval(t);
     };
-  }, [accountId]);
+  }, [accountId, mmAddress]);
 
   async function connect() {
     setBusy("connect");
@@ -142,11 +147,11 @@ export function BuyerDesk({ me }: { me: Me }) {
     setRun(names.map((ensName) => ({ ensName, state: "queued", text: "waiting" })));
     const set = (ensName: string, line: Omit<RunLine, "ensName">) => setRun((rs) => rs.map((r) => (r.ensName === ensName ? { ensName, ...line } : r)));
     for (const ensName of names) {
-      set(ensName, { state: "paying", text: "checking ENS, reading the 402 invoice, signing USDC on Hedera…" });
+      set(ensName, { state: "paying", text: `checking ENS, ${rail === "sepolia" ? "paying USDC from your MetaMask" : "reading the 402 invoice, signing USDC on Hedera"}…` });
       const { verdict, body } = await runPayAsAgent(
         agentRun.run,
         { title: "Buying as your agent", target: ensName },
-        { ensName },
+        { ensName, rail },
         "/api/agent/buy",
       );
       if (verdict.kind === "refused") set(ensName, { state: "refused", text: `🛡️ refused, nothing signed: ${verdict.message}` });
@@ -165,6 +170,8 @@ export function BuyerDesk({ me }: { me: Me }) {
   const byName = useMemo(() => new Map((merchants ?? []).map((m) => [m.ensName, m])), [merchants]);
   const rows = settlements ?? [];
   const w = wallet?.wallet ?? null;
+  const rails: ("hedera" | "sepolia")[] = ["hedera", ...(metamask?.address ? (["sepolia"] as const) : [])];
+  const rail = rails.includes(railPref) ? railPref : "hedera";
   const verified = (merchants ?? []).filter((m) => m.verified);
   const pickedList = verified.filter((m) => picked.has(m.ensName)).map((m) => m.ensName);
   const pickedCost = verified.filter((m) => picked.has(m.ensName)).reduce((s, m) => s + BigInt(m.priceUsdcAtomic ?? "0"), 0n);
@@ -274,6 +281,8 @@ export function BuyerDesk({ me }: { me: Me }) {
           )}
         </Card>
 
+        {w && <MetaMaskCard onChange={onMetamask} />}
+
         {/* ── 2 + 3. merchants and the agent ── */}
         <Card>
           <CardHead
@@ -334,6 +343,7 @@ export function BuyerDesk({ me }: { me: Me }) {
               <p className="text-xs text-muted">
                 {w ? `Selected ${pickedList.length} · about ${usdc(pickedCost.toString(), 2)} USDC` : "Connect your agent wallet to start buying."}
               </p>
+              <RailToggle rail={rail} onChange={setRail} rails={rails} />
             </div>
             <button
               onClick={() => runAgent(pickedList)}
@@ -405,7 +415,7 @@ function Txn({ s, from, merchant }: { s: Settlement; from: string; merchant?: Me
       detail: isSimTx(s.hederaTxId) ? (
         <MockTag>simulated</MockTag>
       ) : (
-        <a className="mono text-accent underline-offset-2 hover:underline" href={explorerTx(s.hederaTxId)} target="_blank" rel="noreferrer">
+        <a className="mono text-accent underline-offset-2 hover:underline" href={settlementTxUrl(s)} target="_blank" rel="noreferrer">
           {s.hederaTxId.slice(0, 18)}… ↗
         </a>
       ),

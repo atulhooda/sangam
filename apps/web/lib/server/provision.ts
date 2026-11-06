@@ -3,6 +3,7 @@ import { issueSubname, parentName, resolveMerchant } from "@sangam/ens";
 import { createDepositAccount } from "@sangam/hedera";
 import { findIdentity, updateMerchantShop, type VerifiedIdentity } from "./identity";
 import { merchantEnsName, sangamApiUrl } from "./merchant";
+import { depositAddress, evmWalletEnabled } from "./evm-keys";
 
 /*
  * Merchant onboarding, the part Sangam does for the merchant once it has
@@ -60,6 +61,8 @@ export async function provisionMerchant(nullifier: string): Promise<VerifiedIden
         priceInrPaise: identity.shop!.priceInrPaise,
         upiHandle: identity.shop!.upiHandle,
         status: "verified",
+        // The name's standard address record: where any wallet sends when it pays this name.
+        ...(evmWalletEnabled() ? { evmPayTo: depositAddress(identity.label) } : {}),
       });
       return await updateMerchantShop(nullifier, {
         publishedUrl: url,

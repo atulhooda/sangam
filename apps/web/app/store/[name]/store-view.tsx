@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { Storefront, StoreProduct } from "@/lib/server/products";
 import { AgentRunOverlay, runPayAsAgent, useAgentRun } from "../../components/agent-run";
-import { Card } from "../../components/ui";
+import { Card, RailToggle, useRail } from "../../components/ui";
 import { Logo } from "../../components/space/kit";
 import { explorerName, rupees, usdc } from "../../dashboard/format";
 
@@ -13,6 +13,9 @@ export function StoreView({ merchant, store, error, buyer }: { merchant: string;
   const agentRun = useAgentRun();
   const [busy, setBusy] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Record<string, Outcome>>({});
+  const [railPref, setRail] = useRail();
+  const rails = [...new Set((store?.products ?? []).flatMap((p) => p.rails))] as ("hedera" | "sepolia")[];
+  const rail = rails.includes(railPref) ? railPref : "hedera";
   const isBakery = merchant.startsWith("bakery.");
 
   async function buy(p: StoreProduct, hacked = false) {
@@ -26,7 +29,7 @@ export function StoreView({ merchant, store, error, buyer }: { merchant: string;
             { kind: "hacked", attack: "overcharge", product: p.label },
             "/api/pay",
           )
-        : await runPayAsAgent(agentRun.run, { title: `Buying with your agent`, target: p.ensName }, { ensName: p.ensName }, "/api/agent/buy");
+        : await runPayAsAgent(agentRun.run, { title: `Buying with your agent`, target: p.ensName }, { ensName: p.ensName, rail }, "/api/agent/buy");
       let o: Outcome;
       if (verdict.kind === "paid") o = { ok: true, text: `Paid ${usdc(String(body?.priceAtomic ?? p.priceUsdcAtomic), 2)} USDC. The shop gets rupees on UPI.`, href: verdict.hashscan };
       else if (verdict.kind === "refused") o = { ok: true, refused: true, text: `🛡️ Refused, nothing signed. ${verdict.message}` };
@@ -72,6 +75,7 @@ export function StoreView({ merchant, store, error, buyer }: { merchant: string;
                 <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-ok" /> verified shop
               </span>
             )}
+            <RailToggle rail={rail} onChange={setRail} rails={rails} />
           </div>
         </div>
 

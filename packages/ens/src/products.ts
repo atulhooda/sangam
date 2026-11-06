@@ -2,7 +2,7 @@ import { encodeAbiParameters, encodeFunctionData, keccak256, labelhash, namehash
 import { normalize, packetToBytes } from "viem/ens";
 import { sepoliaClient } from "./client.ts";
 import { ALL_ROLES, ENSV2_SEPOLIA, FACTORY_ABI, REGISTRY_ABI, REGISTRY_ROLES, RESOLVER_ABI, USER_REGISTRY_INIT_ABI } from "./contracts.ts";
-import { MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY } from "./records.ts";
+import { EVM_COIN_TYPES, MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY } from "./records.ts";
 import { forgetMerchant, resolveMerchant } from "./resolve.ts";
 import { validLabel } from "./subnames.ts";
 import { parentName, sangamContracts, sangamWallet } from "./wallet.ts";
@@ -171,6 +171,10 @@ export async function publishProducts(
       set(MERCHANT_TEXT_KEYS.priceInrPaise, String(p.priceInrPaise)),
       set(MERCHANT_TEXT_KEYS.upiHandle, merchant.upiHandle),
       set(STATUS_TEXT_KEY, "verified"),
+      // The shop's deposit address as the product's standard address record, so a wallet can pay the product by name.
+      ...(merchant.evmPayTo
+        ? EVM_COIN_TYPES.map((coinType) => encodeFunctionData({ abi: RESOLVER_ABI, functionName: "setAddress", args: [n, coinType, merchant.evmPayTo as `0x${string}`] }))
+        : []),
       set(PRODUCT_TEXT_KEYS.merchant, name),
       set(PRODUCT_TEXT_KEYS.title, p.title),
       set(PRODUCT_TEXT_KEYS.description, p.description ?? ""),

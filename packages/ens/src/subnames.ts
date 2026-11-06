@@ -5,7 +5,7 @@ import { normalize, packetToBytes } from "viem/ens";
 import { REPO_ROOT, flag, type MerchantRecord } from "@sangam/shared";
 import { sepoliaClient } from "./client.ts";
 import { ENSV2_SEPOLIA, REGISTRY_ABI, REGISTRY_ROLES, RESOLVER_ABI } from "./contracts.ts";
-import { MERCHANT_FIELDS, MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY, type MerchantStatus } from "./records.ts";
+import { EVM_COIN_TYPES, MERCHANT_FIELDS, MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY, type MerchantStatus } from "./records.ts";
 import { forgetMerchant } from "./resolve.ts";
 import { parentName, sangamContracts, sangamWallet } from "./wallet.ts";
 
@@ -20,7 +20,9 @@ import { parentName, sangamContracts, sangamWallet } from "./wallet.ts";
  * the name to the merchant later if the merchant wants custody.
  */
 
-export type MerchantInput = Omit<MerchantRecord, "ensName" | "priceInrPaise" | "status"> & {
+export type MerchantInput = Omit<MerchantRecord, "ensName" | "priceInrPaise" | "status" | "evmPayTo"> & {
+  /** Written as the name's standard address record (coin type 60) when given. */
+  evmPayTo?: string;
   priceInrPaise: number | string;
   /** Written as sangam.status when given; left untouched otherwise. */
   status?: MerchantStatus;
@@ -113,6 +115,11 @@ export async function issueSubname(label: string, merchant: MerchantInput, log: 
   );
   if (merchant.status) {
     calls.push(encodeFunctionData({ abi: RESOLVER_ABI, functionName: "setText", args: [dnsName, STATUS_TEXT_KEY, merchant.status] }));
+  }
+  if (merchant.evmPayTo) {
+    for (const coinType of EVM_COIN_TYPES) {
+      calls.push(encodeFunctionData({ abi: RESOLVER_ABI, functionName: "setAddress", args: [dnsName, coinType, merchant.evmPayTo as `0x${string}`] }));
+    }
   }
   log(`writing ${calls.length} records on ${name}…`);
   const tx = await wallet.writeContract({ address: resolver, abi: RESOLVER_ABI, functionName: "multicall", args: [calls] });

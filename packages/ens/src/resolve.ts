@@ -81,6 +81,7 @@ async function readEnsMerchant(ensName: string): Promise<MerchantRecord> {
   const values: Partial<Record<MerchantField, string>> = {};
 
   let status: string | undefined;
+  let evmPayTo: string | undefined;
   await Promise.all([
     ...MERCHANT_FIELDS.map(async (field) => {
       const value = await client.getEnsText({ name, key: MERCHANT_TEXT_KEYS[field] });
@@ -89,13 +90,19 @@ async function readEnsMerchant(ensName: string): Promise<MerchantRecord> {
     client.getEnsText({ name, key: STATUS_TEXT_KEY }).then((v) => {
       if (v) status = v;
     }),
+    client.getEnsAddress({ name }).then(
+      (v) => {
+        if (v && v !== "0x0000000000000000000000000000000000000000") evmPayTo = v;
+      },
+      () => undefined,
+    ),
   ]);
 
   const missing = MERCHANT_FIELDS.filter((f) => !values[f]);
   if (missing.length > 0) {
     throw new Error(`${ensName} is missing ENS text records: ${missing.map((f) => MERCHANT_TEXT_KEYS[f]).join(", ")}`);
   }
-  return { ...toRecord(ensName, values as Record<MerchantField, string>), ...(status ? { status } : {}) };
+  return { ...toRecord(ensName, values as Record<MerchantField, string>), ...(status ? { status } : {}), ...(evmPayTo ? { evmPayTo } : {}) };
 }
 
 function readLocalMerchant(ensName: string): MerchantRecord {

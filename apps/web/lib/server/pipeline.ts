@@ -3,11 +3,14 @@ import { randomUUID } from "node:crypto";
 import { issueSubname, resolveMerchant } from "@sangam/ens";
 import { confirmPayment, createScheduledRefund, writeReceipt } from "@sangam/hedera";
 import { decide, mockDecision, ogBalance } from "@sangam/og";
+import { depositAddress, depositKey } from "./evm-keys";
+import * as sepolia from "./sepolia";
 import {
   envOr,
   hasEnv,
   inrPerUsd,
   mocks,
+  type Rail,
   payout,
   usdcAtomicToPaise,
   type Settlement,
@@ -35,6 +38,9 @@ import { findByTx, insertSettlement, listSettlements, recentForMerchant, recentF
  */
 
 export const isSimulatedTx = (tx: string) => tx.startsWith("sim-");
+
+/** The rail a payment came in on: Sepolia when marked (the buyer's own wallet), else Hedera. */
+const railOf = (n: { rail?: Rail }): Rail => n.rail ?? "hedera";
 
 /** Pause between steps so the dashboard can show each one (DEMO_STEP_DELAY_MS). */
 const pause = () => {
@@ -71,6 +77,7 @@ export async function acceptNotice(notice: SettlementNotice): Promise<Settlement
     ondc: notice.ondc ?? null,
     product: notice.product ?? null,
     source: notice.source ?? "x402",
+    rail: railOf(notice),
     status: "received",
     error: null,
     createdAt: now,
@@ -88,12 +95,16 @@ export async function runPipeline(start: Settlement): Promise<void> {
     const merchant = await identifyMerchant(s);
     await pause();
 
-    // 1. Verify the payment on-chain: did the USDC really land in the merchant's account?
-    const payTo = merchant.hederaPayTo;
+    // 1. Verify the payment on-chain, on the rail it came in on: Hedera (Mirror
+    // Node) or Sepolia (the buyer's wallet paid the name's ENS address record).
+    const rail = railOf(s);
+    const payTo = rail === "sepolia" ? (merchant.evmPayTo ?? depositAddress(s.merchant)) : merchant.hederaPayTo;
     const skipChain = simulated || m.chainVerify;
     const confirmed = skipChain
       ? { credited: BigInt(s.usdcAmount), payer: null }
-      : await confirmPayment(s.hederaTxId, payTo, BigInt(s.usdcAmount));
+      : rail === "sepolia"
+        ? await sepolia.confirmPayment(s.hederaTxId, payTo, BigInt(s.usdcAmount))
+        : await confirmPayment(s.hederaTxId, payTo, BigInt(s.usdcAmount));
     const fxRate = await inrPerUsd();
     const inrGrossPaise = usdcAtomicToPaise(confirmed.credited, fxRate);
     const payer = confirmed.payer ?? s.payer;
@@ -148,7 +159,17 @@ export async function runPipeline(start: Settlement): Promise<void> {
       s = await updateSettlement(s.id, { status: "paid", payoutRef: result.ref, payoutMode: result.mode });
     } else {
       s = await updateSettlement(s.id, { status: "held" });
-      if (!simulated && !m.hcs && payer && hasEnv("OPERATOR_ACCOUNT_ID", "OPERATOR_PRIVATE_KEY", "TREASURY_ACCOUNT_ID")) {
+      if (!simulated && rail === "sepolia" && payer && payTo.toLowerCase() === depositAddress(s.merchant).toLowerCase()) {
+        // Back to the buyer's wallet: the deposit address signs, Sangam's Sepolia key submits.
+        try {
+          const tx = await sepolia.gaslessRefund(depositKey(s.merchant), payer as `0x${string}`, BigInt(s.usdcAmount));
+          s = await updateSettlement(s.id, {
+            refund: { rail: "sepolia", scheduleId: "", transactionId: tx, amountAtomic: s.usdcAmount, payer, createdAt: new Date().toISOString() },
+          });
+        } catch (err) {
+          await updateSettlement(s.id, { error: `refund failed: ${(err as Error).message.split("\n")[0]}` });
+        }
+      } else if (!simulated && rail === "hedera" && !m.hcs && payer && hasEnv("OPERATOR_ACCOUNT_ID", "OPERATOR_PRIVATE_KEY", "TREASURY_ACCOUNT_ID")) {
         try {
           // From the account that received it: the merchant's deposit account, or the shared treasury.
           const refund = await createScheduledRefund(payer, s.usdcAmount, `Sangam refund ${s.id}`, merchant.hederaPayTo);
@@ -162,6 +183,7 @@ export async function runPipeline(start: Settlement): Promise<void> {
     // 4. Tamper-evident receipt, hash-chained to the one before it, on HCS. A
     // failure here doesn't undo the payout.
     const topicId = process.env.HCS_TOPIC_ID;
+    // Wallet (Sepolia) payments get their receipt on Hedera too.
     if (!simulated && !m.hcs && topicId) {
       try {
         const { seq: hcsSequence } = await writeReceipt(topicId, {

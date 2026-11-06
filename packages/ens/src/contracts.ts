@@ -50,6 +50,7 @@ export const REGISTRY_ABI = parseAbi([
 /** PermissionedResolver setters take the DNS-encoded name, not a namehash. */
 export const RESOLVER_ABI = parseAbi([
   "function setText(bytes name, string key, string value)",
+  "function setAddress(bytes name, uint256 coinType, bytes addressBytes)",
   "function multicall(bytes[] calls) returns (bytes[])",
 ]);
 

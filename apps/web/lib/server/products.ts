@@ -88,6 +88,8 @@ export type StoreProduct = {
   priceInrPaise: number;
   priceUsdcAtomic: string;
   buyUrl: string;
+  /** "hedera": an agent over x402. "sepolia": from the buyer's own MetaMask, to the name's address record. */
+  rails: ("hedera" | "sepolia")[];
 };
 
 export type Storefront = {
@@ -123,6 +125,7 @@ export async function storefront(merchant: string): Promise<Storefront> {
             priceInrPaise: rec.priceInrPaise,
             priceUsdcAtomic: paiseToUsdcAtomic(rec.priceInrPaise, rate).toString(),
             buyUrl: rec.endpoint,
+            rails: rec.evmPayTo ? ["hedera", "sepolia"] : ["hedera"],
           };
         } catch (err) {
           errors.push(`${ensName}: ${(err as Error).message.split("\n")[0]}`);

@@ -8,6 +8,7 @@ import { agentSigningKey, buyerBudgetAtomic, requireBuyer, spentByWallet } from 
 import { createAgentBuyer, explorerUrl } from "@/lib/server/rails";
 import { merchantEnsName, ondcGatewayName } from "@/lib/server/merchant";
 import { findByTx } from "@/lib/server/store";
+import { walletBuy } from "@/lib/server/wallet-buy";
 import type { Invoice } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -26,10 +27,13 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   const me = await requireBuyer();
   if (!me) return Response.json({ error: "Sign in as a buyer first." }, { status: 401 });
+  const body = (await req.json().catch(() => ({}))) as { ensName?: string; url?: string; rail?: string };
+  // From the buyer's own MetaMask (Sepolia), by ENS name: see lib/server/wallet-buy.ts.
+  if (body.rail === "sepolia") return walletBuy(me, body);
+
   const wallet = me.identity.wallet;
   if (!wallet) return Response.json({ error: "Connect your agent wallet first." }, { status: 400 });
 
-  const body = (await req.json().catch(() => ({}))) as { ensName?: string; url?: string };
   const agent = (guard?: Parameters<typeof createAgentBuyer>[0]["guard"]) =>
     createAgentBuyer({
       hedera: { accountId: wallet.accountId, privateKey: agentSigningKey() },

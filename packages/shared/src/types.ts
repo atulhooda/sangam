@@ -6,6 +6,8 @@ export type MerchantRecord = {
   endpoint: string;
   hederaPayTo: string;
   network: string;
+  /** The name's standard address record (coin type 60): where any wallet sends when you type the name. */
+  evmPayTo?: string;
   upiHandle: string;
   priceInrPaise: number;
   /**
@@ -20,12 +22,17 @@ export type SettlementStatus = "received" | "confirmed" | "decided" | "paid" | "
 
 export type PayoutMode = "mock" | "razorpayx-test";
 
+/** Which chain a payment settled on: Hedera (x402), or Sepolia (the buyer's own wallet). Missing on older rows: Hedera. */
+export type Rail = "hedera" | "sepolia";
+
 export type Settlement = {
   /** How Sangam learned of the payment: the merchant's x402 notice, or USDC seen landing in its deposit account. */
   source?: "x402" | "transfer";
+  /** Hedera (USDC over x402) or Sepolia (USDC from the buyer's own MetaMask). Missing on older rows: Hedera. */
+  rail?: Rail;
   id: string;
   merchant: string;
-  /** The payment transaction: a Hedera transaction id. */
+  /** The payment transaction: a Hedera transaction id, or a Sepolia tx hash (0x…) when rail is "sepolia". */
   hederaTxId: string;
   payer: string | null;
   /** Atomic USDC units (6 decimals) actually credited. */
@@ -49,6 +56,8 @@ export type Settlement = {
   quotedInrPaise?: number | null;
   /** Refund back to the payer, created when the payment is held: a Hedera scheduled transaction. */
   refund?: {
+    /** "sepolia": a gasless USDC transfer back to the buyer's wallet (scheduleId empty). */
+    rail?: Rail;
     scheduleId: string;
     transactionId: string;
     amountAtomic: string;
@@ -78,6 +87,8 @@ export type SettlementNotice = {
   source?: "x402" | "transfer";
   /** The storefront product bought, when the sale was one product. */
   product?: { ensName: string; title: string };
+  /** "sepolia" when the buyer's own wallet paid (hederaTxId is then a Sepolia tx hash). */
+  rail?: Rail;
 };
 
 /** The ONDC side of a settlement: which seller, which order, where the rupees go. */

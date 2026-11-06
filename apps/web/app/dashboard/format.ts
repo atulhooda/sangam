@@ -34,20 +34,26 @@ export const shortHash = (h: string) => `${h.slice(0, 8)}…${h.slice(-6)}`;
 
 /* ── the rail: USDC on Hedera ── */
 
-export type Rail = "hedera";
-export const RAIL_NAME: Record<Rail, string> = { hedera: "Hedera" };
+/** Hedera: an agent paid over x402. Sepolia: the buyer's own MetaMask paid the shop's ENS name. */
+export type Rail = "hedera" | "sepolia";
+export const RAIL_NAME: Record<Rail, string> = { hedera: "Hedera", sepolia: "Sepolia" };
+export const SEPOLIA_EXPLORER = "https://sepolia.etherscan.io";
 
-export const railOf = (_s: Pick<Settlement, "hederaTxId">): Rail => "hedera";
-export const tokenOf = (_s: Pick<Settlement, "hederaTxId">) => "USDC";
+export const railOf = (s: Pick<Settlement, "rail" | "hederaTxId">): Rail => s.rail ?? "hedera";
+export const tokenOf = (_s: Pick<Settlement, "rail" | "hederaTxId">) => "USDC";
 
-/** Explorer link for a payment. */
-export const explorerTx = (tx: string) => hashscanTx(tx);
-export const explorerAddress = (address: string) => `https://hashscan.io/testnet/account/${address}`;
-/** The label for a link the dashboard shows. */
-export const explorerName = (_url?: string | null) => "HashScan";
+/** Explorer link for a transaction on its rail. */
+export const explorerTx = (tx: string, rail?: Rail) => (rail === "sepolia" ? `${SEPOLIA_EXPLORER}/tx/${tx}` : hashscanTx(tx));
+/** A settlement's payment transaction on its explorer. */
+export const settlementTxUrl = (s: Pick<Settlement, "rail" | "hederaTxId">) => explorerTx(s.hederaTxId, railOf(s));
+export const explorerAddress = (address: string) =>
+  address.startsWith("0x") ? `${SEPOLIA_EXPLORER}/address/${address}` : `https://hashscan.io/testnet/account/${address}`;
+/** "HashScan" or "Etherscan", for a link's label. */
+export const explorerName = (url?: string | null) => (url && url.includes("etherscan") ? "Etherscan" : "HashScan");
 
-/** Where the settlement's refund can be seen: a Hedera schedule. */
-export const refundUrl = (r: NonNullable<Settlement["refund"]>) => (r.scheduleId ? hashscanSchedule(r.scheduleId) : hashscanTx(r.transactionId));
+/** Where the settlement's refund can be seen: a Hedera schedule, or a Sepolia transfer back to the buyer's wallet. */
+export const refundUrl = (r: NonNullable<Settlement["refund"]>) =>
+  r.rail === "sepolia" || !r.scheduleId ? explorerTx(r.transactionId, r.rail) : hashscanSchedule(r.scheduleId);
 
 /** Where the settlement's receipt is: an HCS topic message. */
 export function receiptLink(s: Settlement): { href: string; label: string } | null {
