@@ -1,5 +1,6 @@
 import { UntrustedPayeeError, assertFairInvoice, assertVerifiedPayee, resolveMerchant } from "@sangam/ens";
 import { createPayingFetch, hashscanTxUrl } from "@sangam/hedera";
+import { BadBuyUrlError, assertUrlMerchantOrigin, parseAgentUrl } from "@/lib/server/buy-url";
 import { agentSigningKey, buyerBudgetAtomic, requireBuyer, spentByWallet } from "@/lib/server/buyer";
 import { merchantEnsName, ondcGatewayName } from "@/lib/server/merchant";
 import { findByTx } from "@/lib/server/store";
@@ -24,30 +25,46 @@ export async function POST(req: Request) {
   const wallet = me.identity.wallet;
   if (!wallet) return Response.json({ error: "Connect your agent wallet first." }, { status: 400 });
 
-  const body = (await req.json().catch(() => ({}))) as { ensName?: string };
-  const ensName = (body.ensName ?? "").trim().toLowerCase();
-  if (!ensName) return Response.json({ error: "ensName is required" }, { status: 400 });
+  const body = (await req.json().catch(() => ({}))) as { ensName?: string; url?: string };
 
+  // Either a merchant by ENS name, or a buyer-pasted link (vetted the same way
+  // /api/pay vets it, so the two routes can't drift).
   let url: URL;
-  try {
-    url = new URL((await resolveMerchant(ensName)).endpoint);
-    if (ensName === merchantEnsName()) {
-      url.searchParams.set("from", "CSMT");
-      url.searchParams.set("to", "PUNE");
+  let ensName: string | null = null;
+  let target: string;
+  if ((body.url ?? "").trim()) {
+    try {
+      url = await parseAgentUrl(body.url!.trim(), new URL(req.url).origin);
+    } catch (err) {
+      if (err instanceof BadBuyUrlError) return Response.json({ error: err.message }, { status: 422 });
+      throw err;
     }
-  } catch (err) {
-    return Response.json({ error: `${ensName}: ${(err as Error).message.split("\n")[0]}` }, { status: 404 });
+    target = url.host;
+  } else {
+    ensName = (body.ensName ?? "").trim().toLowerCase();
+    if (!ensName) return Response.json({ error: "ensName or url is required" }, { status: 400 });
+    target = ensName;
+    try {
+      url = new URL((await resolveMerchant(ensName)).endpoint);
+      if (ensName === merchantEnsName()) {
+        url.searchParams.set("from", "CSMT");
+        url.searchParams.set("to", "PUNE");
+      }
+    } catch (err) {
+      return Response.json({ error: `${ensName}: ${(err as Error).message.split("\n")[0]}` }, { status: 404 });
+    }
   }
 
   try {
     const probe = await fetch(url, { cache: "no-store" });
     const header = probe.headers.get("PAYMENT-REQUIRED");
-    if (probe.status !== 402 || !header) throw new Error(`expected a 402 invoice from ${ensName}, got ${probe.status}`);
+    if (probe.status !== 402 || !header) throw new Error(`expected a 402 invoice from ${target}, got ${probe.status}`);
     const option = (JSON.parse(Buffer.from(header, "base64").toString("utf8")) as Invoice).accepts[0];
     const price = BigInt(option?.amount ?? "0");
     // Who to pay and how much come from ENS; refuse a dishonest invoice before anything else.
     const guard = ensName === ondcGatewayName() ? assertVerifiedPayee : assertFairInvoice;
     if (option) await guard(option);
+    if (ensName === null && option) await assertUrlMerchantOrigin(url, option);
 
     const spent = spentByWallet(wallet.accountId);
     const limit = buyerBudgetAtomic();
@@ -59,11 +76,12 @@ export async function POST(req: Request) {
     const purchase = await buy<Record<string, unknown>>(url);
     if (purchase.status >= 400 || !purchase.settle?.success) {
       const reason = (purchase.body as { error?: string } | null)?.error;
-      return Response.json({ error: `${ensName} answered ${purchase.status}${reason ? `: ${reason}` : ""}. Is your wallet funded?` }, { status: 502 });
+      return Response.json({ error: `${target} answered ${purchase.status}${reason ? `: ${reason}` : ""}. Is your wallet funded?` }, { status: 502 });
     }
     const tx = purchase.settle.transaction;
     return Response.json({
-      ensName,
+      ensName: ensName ?? undefined,
+      url: ensName === null ? url.toString() : undefined,
       priceAtomic: purchase.price,
       hederaTxId: tx,
       hashscan: hashscanTxUrl(tx),

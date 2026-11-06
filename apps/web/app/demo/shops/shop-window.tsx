@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { ATTACKS, HACKER_ACCOUNT, type Attack, type Inspection, type ShopDef } from "@/lib/demo-shop";
+import { AgentRunOverlay, runPayAsAgent, useAgentRun } from "../../components/agent-run";
 import { Tilt3D } from "../../components/space/kit";
 
 /*
@@ -29,6 +30,7 @@ export function ShopWindow({ shop, ens, compact = false }: { shop: ShopDef; ens:
   const [lines, setLines] = useState<Line[]>([]);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const agentRun = useAgentRun();
   const hacked = shop.variant === "hacked";
   const price = ens.priceInr !== null ? `₹${ens.priceInr}` : "₹—";
 
@@ -66,16 +68,27 @@ export function ShopWindow({ shop, ens, compact = false }: { shop: ShopDef; ens:
       }
 
       await push({ text: `✓ invoice matches ENS: signing ${data.invoice.amountUsdc} USDC on Hedera…`, tone: "ok" });
-      const pay = await fetch("/api/pay", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "ticket" }) });
-      const paid = (await pay.json()) as { error?: string; hashscan?: string; ticket?: { pnr?: string } };
-      if (pay.status === 401) {
+      // The one real purchase in the demo, on the honest shop. It drives the
+      // hologram overlay; the console transcript stays as the inline record.
+      const { verdict, body: paid } = await runPayAsAgent(
+        agentRun.run,
+        { title: `${shop.brand} · one rail ticket`, target: "tickets.sangam.eth" },
+        { kind: "ticket" },
+        "/api/pay",
+      );
+      if (verdict.kind === "soft") {
         await push({ text: "  sign in as a buyer to make the real payment", tone: "dim" }, 0);
         setOutcome({ kind: "checked" });
         return;
       }
-      if (!pay.ok) throw new Error(paid.error ?? `payment failed (${pay.status})`);
-      await push({ text: `✓ paid · PNR ${paid.ticket?.pnr ?? "issued"} · settling to UPI`, tone: "ok" }, 0);
-      setOutcome({ kind: "paid", hashscan: paid.hashscan });
+      if (verdict.kind === "refused") {
+        await push({ text: `✕ refused: nothing signed, no money moved`, tone: "bad" }, 0);
+        setOutcome({ kind: "refused", reason: verdict.message });
+        return;
+      }
+      if (verdict.kind === "error") throw new Error(verdict.message);
+      await push({ text: `✓ paid · PNR ${(paid?.ticket as { pnr?: string } | undefined)?.pnr ?? "issued"} · settling to UPI`, tone: "ok" }, 0);
+      setOutcome({ kind: "paid", hashscan: verdict.hashscan });
     } catch (err) {
       await push({ text: `✕ ${(err as Error).message}`, tone: "bad" }, 0);
       setOutcome({ kind: "error", message: (err as Error).message });
@@ -168,6 +181,7 @@ export function ShopWindow({ shop, ens, compact = false }: { shop: ShopDef; ens:
         </div>
         <AnimatePresence>{outcome && <OutcomeBanner outcome={outcome} />}</AnimatePresence>
       </div>
+      <AgentRunOverlay state={agentRun.state} onClose={agentRun.close} />
     </div>
   );
 }

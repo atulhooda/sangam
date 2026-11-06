@@ -1,6 +1,7 @@
 import { UntrustedPayeeError, assertFairInvoice, assertVerifiedPayee, resolveMerchant } from "@sangam/ens";
 import { createPayingFetch, hashscanTxUrl } from "@sangam/hedera";
 import { assertBudgetAllows, BudgetExceededError, budgetSnapshot, recordBudgetSpend } from "@/lib/server/budget";
+import { BadBuyUrlError, assertUrlMerchantOrigin, parseAgentUrl } from "@/lib/server/buy-url";
 import { parseAttack } from "@/lib/demo-shop";
 import { merchantEnsName } from "@/lib/server/merchant";
 import { canPayAsAgent } from "@/lib/server/pipeline";
@@ -24,6 +25,11 @@ export const maxDuration = 60;
  *   { kind: "hacked" }  tries the demo bakery whose backend was hacked to
  *                       bill 10× its ENS price (or pay another account):
  *                       the agent must refuse it
+ *   { kind: "url", url }  tries an x402 purchase at a buyer-pasted link. The
+ *                       link is vetted (https, public, resolvable) and the
+ *                       invoice must pass the same ENS checks plus an
+ *                       origin check: the page must live on the merchant's
+ *                       registered ENS endpoint.
  *
  * The agent only pays verified Sangam merchants: before signing, every
  * invoice is checked against the merchant's ENS record: who to pay
@@ -39,7 +45,13 @@ export async function POST(req: Request) {
   if (!canPayAsAgent()) {
     return Response.json({ error: "Set CUSTOMER_ACCOUNT_ID, CUSTOMER_PRIVATE_KEY and SETTLEMENT_SHARED_SECRET in .env" }, { status: 412 });
   }
-  const body = (await req.json().catch(() => ({}))) as { kind?: "ticket" | "ondc" | "scam" | "hacked"; attack?: string; q?: string; qty?: number };
+  const body = (await req.json().catch(() => ({}))) as {
+    kind?: "ticket" | "ondc" | "scam" | "hacked" | "url";
+    attack?: string;
+    q?: string;
+    qty?: number;
+    url?: string;
+  };
   const origin = new URL(req.url).origin;
 
   let url: URL;
@@ -50,6 +62,16 @@ export async function POST(req: Request) {
   } else if (body.kind === "hacked") {
     url = new URL(`${origin}/demo/shop/bakery/book?attack=${parseAttack(body.attack)}`);
     what = "a cake from the hacked bakery";
+  } else if (body.kind === "url") {
+    const raw = (body.url ?? "").trim();
+    if (!raw) return Response.json({ error: "Paste a website link for the agent to buy from." }, { status: 400 });
+    try {
+      url = await parseAgentUrl(raw, origin);
+    } catch (err) {
+      if (err instanceof BadBuyUrlError) return Response.json({ error: err.message }, { status: 422 });
+      throw err;
+    }
+    what = "an x402 purchase from " + url.host;
   } else if (body.kind === "ondc") {
     const res = await fetch(`${origin}/merchant/ondc/catalog?q=${encodeURIComponent(body.q ?? "atta")}`, { cache: "no-store" });
     const catalog = (await res.json()) as { results?: { name: string; orderUrl: string }[]; error?: string };
@@ -71,12 +93,26 @@ export async function POST(req: Request) {
     // the price, then refuse if it wouldn't fit in what's left.
     const probe = await fetch(url, { cache: "no-store" });
     const probeHeader = probe.headers.get("PAYMENT-REQUIRED");
-    if (probe.status !== 402 || !probeHeader) throw new Error(`expected 402 from merchant, got ${probe.status}`);
+    if (probe.status !== 402 || !probeHeader) {
+      if (body.kind === "url") {
+        // A normal website, not an x402 paywall: a friendly answer, not an error.
+        return Response.json(
+          {
+            notX402: true,
+            error: `${url.host} doesn't speak x402 — it answered ${probe.status} with no PAYMENT-REQUIRED invoice, so there is nothing for the agent to sign. Nothing was paid.`,
+          },
+          { status: 422 },
+        );
+      }
+      throw new Error(`expected 402 from merchant, got ${probe.status}`);
+    }
     const option = (JSON.parse(atob(probeHeader)) as Invoice).accepts[0];
     if (!option?.amount) throw new Error("merchant returned no payment options");
     // ENS first: a dishonest invoice is refused for what it is, whatever the budget.
     const guard = body.kind === "ondc" ? assertVerifiedPayee : assertFairInvoice;
     await guard(option);
+    // And the pasted page must live on the merchant's registered ENS endpoint.
+    if (body.kind === "url") await assertUrlMerchantOrigin(url, option);
     await assertBudgetAllows(BigInt(option.amount));
 
     const { buy } = createPayingFetch({ guard });
