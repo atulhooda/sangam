@@ -67,6 +67,18 @@ const cbServer = createServer((req, res) => {
 });
 await new Promise((r) => cbServer.listen(3299, r));
 
+// Scale a PCM16 line's volume (a quieter voice further from the mic).
+const quiet = (pcm, gain) => {
+  const out = Buffer.alloc(pcm.length);
+  for (let i = 0; i < pcm.length / 2; i++) out.writeInt16LE(Math.round(pcm.readInt16LE(i * 2) * gain), i * 2);
+  return out;
+};
+// Every caller phrase is rendered up front, so the test can speak at exact moments.
+const invoiceLine = decodeWav(await say("रमेश के लिए 2500 का इनवॉइस, सात दिन"));
+const yesLine = decodeWav(await say("हाँ, बना दो"));
+const decoyLine = decodeWav(await say("सुरेश के लिए 9000 का इनवॉइस"));
+const backgroundNo = quiet(decodeWav(await say("नहीं, मत बनाओ")), 0.2);
+
 // 1. HMAC-authed session issue — what the web app's /api/bolo/session does.
 const body = JSON.stringify({
   external_ref: "sangam:merchant:smoke",
@@ -110,44 +122,80 @@ await new Promise((r) => ws.on("open", r));
 ws.send(JSON.stringify({ event: "connected" }));
 ws.send(JSON.stringify({ event: "start", start: { streamSid: "smoke", callSid: "smoke", customParameters: { session_token: created.token, callSource: "smoke" } } }));
 
-let boloSpeaking = false;
-ws.on("message", (raw) => {
-  const m = JSON.parse(raw.toString());
-  if (m.event === "media") boloSpeaking = true;
-  if (m.event === "mark" && m.mark?.name === "bolo_done") boloSpeaking = false;
-  if (m.event === "bolo_caption") console.log(`  ${m.role === "bolo" ? "🎙 BOLO " : "🗣 CALLER"}: ${m.text}`);
-});
-
-const waitForBolo = async () => {
-  while (boloSpeaking) await new Promise((r) => setTimeout(r, 100));
-  await new Promise((r) => setTimeout(r, 300));
-};
-
-// Wait until Bolo has said something containing `needle` (or give up).
+// Track Bolo's real audio: a line starts with its first media packet and
+// ends with its bolo_done mark. A simulated player (150 ms jitter buffer, like
+// the browser's) counts underruns — every one is an audible stutter.
+let marks = 0;
+let inLine = false;
+let lineStart = 0;
+let queuedMs = 0;
+let lineEndAt = 0;
+let underruns = 0;
+let lines = 0;
 let lastBolo = "";
+const callerCaptions = [];
 ws.on("message", (raw) => {
   const m = JSON.parse(raw.toString());
-  if (m.event === "bolo_caption" && m.role === "bolo") lastBolo = m.text;
+  if (m.event === "media") {
+    const now = Date.now();
+    if (!inLine) {
+      inLine = true;
+      lines++;
+      lineStart = now;
+      queuedMs = 0;
+    }
+    if (now > lineStart + 150 + queuedMs) underruns++; // the player ran dry before this packet arrived
+    queuedMs += (Buffer.from(m.media.payload, "base64").length / 2 / 8000) * 1000;
+  }
+  if (m.event === "mark" && m.mark?.name === "bolo_done") {
+    marks++;
+    inLine = false;
+    lineEndAt = lineStart + 150 + queuedMs; // when the last sample actually finishes playing
+  }
+  if (m.event === "bolo_caption") {
+    console.log(`  ${m.role === "bolo" ? "🎙 BOLO " : "🗣 CALLER"}: ${m.text}`);
+    if (m.role === "bolo") lastBolo = m.text;
+    else callerCaptions.push(m.text);
+  }
 });
-const waitForLine = async (needle, ms = 45_000) => {
+
+/** Wait for Bolo to say `needle`, then for her audio to really finish playing, then a human pause. */
+const waitForLine = async (needle, ms = 60_000) => {
   const t0 = Date.now();
-  while (!lastBolo.includes(needle) && Date.now() - t0 < ms) await new Promise((r) => setTimeout(r, 200));
-  await waitForBolo();
+  while (!lastBolo.includes(needle) && Date.now() - t0 < ms) await new Promise((r) => setTimeout(r, 100));
+  const seen = marks;
+  while (marks === seen && Date.now() - t0 < ms) await new Promise((r) => setTimeout(r, 100));
+  while (Date.now() < lineEndAt + 900) await new Promise((r) => setTimeout(r, 50));
   return lastBolo.includes(needle);
 };
 
-// 3. The conversation: Bolo greets, then the "caller" speaks the invoice, then "haan".
-const invoiceLine = decodeWav(await say("रमेश के लिए 2500 का इनवॉइस, सात दिन"));
-const yesLine = decodeWav(await say("हाँ, बना दो"));
+// 3. The conversation, with two traps for the new behaviour.
+// Trap 1 — half-duplex: talk OVER Bolo's greeting, while her audio is really playing.
+while (!inLine) await new Promise((r) => setTimeout(r, 20));
+await new Promise((r) => setTimeout(r, 400));
+console.log("🗣 (decoy, spoken over Bolo's greeting: सुरेश 9000)");
+await stream(decoyLine);
 await waitForLine("नमस्ते");
+
 console.log("🗣 (caller speaks the invoice line)");
 await stream(invoiceLine);
 const drafted = await waitForLine("बना दूँ");
-console.log(drafted ? "   ↳ Bolo read the draft back" : "   ↳ (no draft read-back within 45 s)");
+console.log(drafted ? "   ↳ Bolo read the draft back" : "   ↳ (no draft read-back within 60 s)");
+
+// Trap 2 — loudest voice: a quiet "no" from someone in the background, then the merchant's loud "haan".
+console.log("🗣 (background voice at 20% volume: नहीं, मत बनाओ)");
+await stream(backgroundNo);
+await new Promise((r) => setTimeout(r, 300));
 console.log("🗣 (caller confirms)");
 await stream(yesLine);
-await waitForLine("इनवॉइस बन गया", 45_000);
+await waitForLine("इनवॉइस बन गया");
 clearInterval(pump);
+
+const heardDecoy = callerCaptions.some((t) => t.includes("सुरेश") || t.includes("9000"));
+const heardBackground = callerCaptions.some((t) => t.includes("मत"));
+console.log(`${heardDecoy ? "❌" : "✅"} half-duplex: decoy spoken over Bolo was ${heardDecoy ? "HEARD" : "ignored"}`);
+console.log(`${heardBackground ? "❌" : "✅"} loudest voice: quiet background "no" was ${heardBackground ? "HEARD" : "gated out"}`);
+console.log(`${underruns === 0 ? "✅" : "❌"} smooth playback: ${underruns} underrun(s) across ${lines} spoken line(s)`);
 
 // 4. Token single-use check: a replay of `start` must be refused.
 const replay = new WebSocket(created.ws_url);
@@ -159,7 +207,7 @@ console.log(`🔒 token replay close code: ${refused} (4001 = correctly refused)
 
 ws.send(JSON.stringify({ event: "stop" }));
 await new Promise((r) => setTimeout(r, 1500));
-console.log(received.length && received[0].body.result?.invoice
-  ? `✅ INVOICE CALLBACK: ${JSON.stringify(received[0].body.result.invoice)}`
-  : "❌ no invoice in callback");
-process.exit(received.length && received[0].body.result?.invoice ? 0 : 1);
+const inv = received[0]?.body.result?.invoice;
+const rightInvoice = inv?.amountInr === 2500 && /रमेश|ramesh/i.test(inv?.buyerName ?? "");
+console.log(rightInvoice ? `✅ INVOICE CALLBACK: ${JSON.stringify(inv)}` : `❌ wrong/no invoice in callback: ${JSON.stringify(inv ?? null)}`);
+process.exit(rightInvoice && !heardDecoy && !heardBackground && underruns === 0 ? 0 : 1);

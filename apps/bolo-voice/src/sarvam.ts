@@ -86,7 +86,22 @@ const int = (v: unknown, max: number): number | null => {
   return Number.isFinite(n) && n > 0 && n <= max ? Math.round(n) : null;
 };
 
-const YES = /\b(haan|ha|haanji|ji haan|theek|thik|confirm|pakka|pay kar|bhar do|bhar de|kar do)\b/i;
+// Yes/no fallbacks, romanised AND Devanagari (Saaras returns Devanagari).
+// \b doesn't work on Devanagari, so those match as substrings. "No" always
+// wins a tie: "मत बनाओ" contains "बनाओ" but must never read as yes.
+const YES_LATIN = /\b(haan|ha|haanji|ji haan|theek|thik|confirm|pakka|pay kar|bhar do|bhar de|kar do|bana do|banao|yes|ok|okay)\b/i;
+const NO_LATIN = /\b(nahi|nahin|na|mat|rok|rehne do|cancel|no)\b/i;
+// Single words match whole words only ("ना" must not match inside "बना");
+// multi-word phrases match as substrings.
+const YES_WORDS = ["हाँ", "हां", "हा", "जी", "ठीक", "पक्का", "बनाओ", "ओके"];
+const YES_PHRASES = ["बना दो", "बना दीजिए", "कर दो", "कर दीजिए", "भर दो", "भर दीजिए"];
+const NO_WORDS = ["नहीं", "नही", "ना", "मत", "रोको", "कैंसल"];
+const NO_PHRASES = ["रहने दो", "रहने दीजिए", "रोक दो"];
+const words = (s: string) => s.split(/[\s,.!?।॥"'“”()-]+/).filter(Boolean);
+const hasWord = (s: string, list: string[]) => words(s).some((w) => list.includes(w));
+const hasPhrase = (s: string, list: string[]) => list.some((p) => s.includes(p));
+export const saysNo = (s: string) => NO_LATIN.test(s) || hasWord(s, NO_WORDS) || hasPhrase(s, NO_PHRASES);
+export const saysYes = (s: string) => !saysNo(s) && (YES_LATIN.test(s) || hasWord(s, YES_WORDS) || hasPhrase(s, YES_PHRASES));
 
 export type InvoiceDraft = {
   buyerName: string | null;
@@ -101,11 +116,13 @@ export type BuyerIntent = "pay" | "amount" | "status" | "yes" | "no" | "unknown"
 export async function parseMerchant(utterance: string, expecting: "draft" | "confirm"): Promise<{ draft?: InvoiceDraft; yes?: boolean; no?: boolean }> {
   if (expecting === "confirm") {
     const raw = await chat(
-      'You classify what an Indian merchant said in Hindi/Hinglish after being asked to confirm. Answer ONLY JSON: {"yes": boolean, "no": boolean}. "haan/theek hai/pakka/confirm" → yes. "nahi/nahi n/rok do/cancel" → no. Both false if neither.',
+      'You classify what an Indian merchant said in Hindi/Hinglish after being asked to confirm. Answer ONLY JSON: {"yes": boolean, "no": boolean}. "haan/theek hai/pakka/confirm/bana do/haan bana do" → yes. "nahi/mat banao/rehne do/cancel" → no. Both false if neither.',
       utterance,
     );
     const d = parseJson(raw);
-    return { yes: d.yes === true || YES.test(utterance), no: d.no === true || /\b(nahi|nahi n|rok|cancel)\b/i.test(utterance) };
+    // A spoken "no" anywhere overrides the model; an unambiguous yes-word backs it up.
+    const no = saysNo(utterance) || (d.no === true && !saysYes(utterance));
+    return { yes: !no && (d.yes === true || saysYes(utterance)), no };
   }
   const raw = await chat(
     'You convert a Hindi/Hinglish voice invoice command into JSON. Answer ONLY: {"buyerName": string|null, "amountInr": number|null, "dueDays": number|null, "note": string|null}.' +
@@ -132,9 +149,10 @@ export async function parseBuyer(utterance: string): Promise<BuyerIntent> {
   );
   const d = parseJson(raw);
   const intent = d.intent;
+  // A spoken "no" overrides the model for yes/pay — never pay on "mat bharo".
+  if (saysNo(utterance) && (intent === "yes" || intent === "pay" || intent === undefined || intent === "unknown")) return "no";
   if (intent === "pay" || intent === "amount" || intent === "status" || intent === "yes" || intent === "no") return intent;
-  if (YES.test(utterance)) return "yes";
-  if (/\b(nahi|no)\b/i.test(utterance)) return "no";
+  if (saysYes(utterance)) return "yes";
   return "unknown";
 }
 

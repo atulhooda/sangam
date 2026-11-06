@@ -11,6 +11,10 @@
  */
 
 const RATE = 8000;
+/** Mic stays muted this long after Bolo's audio ends, so her echo from the speaker isn't sent. */
+const MIC_TAIL_S = 0.35;
+/** Playback lead when the queue is empty: absorbs network jitter without audible delay. */
+const JITTER_S = 0.15;
 
 /** connecting → bolo (speaking) → listening → thinking (heard you, preparing a reply) → bolo … → ended */
 export type VoicePhase = "connecting" | "bolo" | "listening" | "thinking" | "ended" | "error";
@@ -130,8 +134,13 @@ export class BoloVoice {
     source.connect(this.processor);
     this.processor.connect(this.ctx.destination); // required for onaudioprocess to fire; outputs silence
     this.processor.onaudioprocess = (e) => {
-      if (this.ws?.readyState !== WebSocket.OPEN) return;
-      const payload = toBase64Pcm16(downsample(e.inputBuffer.getChannelData(0), this.ctx!.sampleRate, RATE));
+      if (this.ws?.readyState !== WebSocket.OPEN || !this.ctx) return;
+      const samples = downsample(e.inputBuffer.getChannelData(0), this.ctx.sampleRate, RATE);
+      // Half-duplex: while Bolo is talking (and briefly after, for speaker
+      // echo) the mic sends silence. The stream stays continuous, which the
+      // server's speech recogniser needs, but Bolo never hears herself.
+      const botTalking = this.playing.length > 0 || this.ctx.currentTime < this.playEnd + MIC_TAIL_S;
+      const payload = toBase64Pcm16(botTalking ? new Float32Array(samples.length) : samples);
       this.ws.send(JSON.stringify({ event: "media", media: { payload } }));
     };
 
@@ -172,7 +181,11 @@ export class BoloVoice {
       const node = this.ctx.createBufferSource();
       node.buffer = buffer;
       node.connect(this.outAnalyser);
-      const at = Math.max(this.ctx.currentTime, this.playEnd);
+      // Jitter buffer: when the queue has run dry (a new line, or a late
+      // packet), start a little in the future so the next packets can line
+      // up behind this one instead of each one playing late and choppy.
+      const now = this.ctx.currentTime;
+      const at = this.playEnd > now ? this.playEnd : now + JITTER_S;
       node.start(at);
       this.playEnd = at + buffer.duration;
       this.playing.push(node);

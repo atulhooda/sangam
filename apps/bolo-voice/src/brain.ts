@@ -1,5 +1,5 @@
 import WebSocket from "ws";
-import { chat, parseBuyer, parseMerchant, resample8k, sarvamReady, speakPcm8k, sttUrl, wavHeader8k, CHUNK_BYTES, type InvoiceDraft } from "./sarvam";
+import { chat, parseBuyer, parseMerchant, resample8k, sarvamReady, speakPcm8k, sttUrl, wavHeader8k, type InvoiceDraft } from "./sarvam";
 
 /*
  * One live Bolo conversation. Mirrors Ritu's intake CallHandler: the wire
@@ -38,6 +38,40 @@ export type CallbackResult = {
 const MAX_DURATION_MS = 5 * 60_000;
 const UTTERANCE_SILENCE_MS = 1100; // Saaras keeps finalising chunks; 1.1 s of quiet ends a turn
 
+/*
+ * Half-duplex, by design: while Bolo speaks she does not listen. Mic frames
+ * that arrive during her playback (plus a short tail, so her own voice
+ * echoing back from the speaker isn't heard) are replaced with silence
+ * before Saaras sees them. No barge-in: it used to fire on that echo and cut
+ * Bolo off mid-sentence.
+ */
+const ECHO_TAIL_MS = 400;
+
+/*
+ * "Listen to the loudest voice": a gate that follows the main speaker. It
+ * tracks the recent peak level of the person at the mic and passes only
+ * frames within ~10 dB of it; quieter voices in the room (and fan/street
+ * noise) become silence. A short hangover keeps word endings intact.
+ */
+const NOISE_FLOOR = 0.012; // RMS below this is never speech
+const GATE_RATIO = 0.35; // pass frames ≥ 35% of the speaker's recent peak (~-9 dB)
+// The peak relaxes so a genuinely quieter speaker isn't locked out — but only
+// while sound is actually arriving. Silence (Bolo thinking, Bolo talking, the
+// caller pausing) says nothing about how loud the caller is, so it must not
+// lower the bar; otherwise a quiet voice slips in right after a pause.
+const PEAK_HALF_LIFE_MS = 6000; // of audible audio, not wall-clock time
+const GATE_HANGOVER_MS = 350;
+const GATE_PREROLL_MS = 250; // look-ahead, so a word's soft onset isn't clipped
+
+/*
+ * Smooth playback: 100 ms packets, kept ~300 ms ahead of real time so the
+ * browser always has audio queued. 20 ms packets on a setTimeout loop were
+ * jittery enough to starve the player, which is why Bolo stuttered.
+ */
+const PACKET_MS = 100;
+const PACKET_BYTES = (8000 * 2 * PACKET_MS) / 1000; // 1600 bytes of PCM16 @ 8 kHz
+const PREBUFFER_MS = 300;
+
 type Wire = { send: (s: string) => void; close: (code?: number) => void };
 
 export class BoloSession {
@@ -45,14 +79,22 @@ export class BoloSession {
   readonly id: string;
   private startedAt = Date.now();
   private stt: WebSocket | null = null;
-  private speaking = false;
+  /** Lines queued or being sent; Bolo is "speaking" while any are pending… */
+  private pendingSays = 0;
+  /** …and until her last line has finished playing, plus the echo tail. */
+  private speakingUntil = 0;
   private synthQueue: Promise<void> = Promise.resolve();
+  /** Loudest-voice gate state. */
+  private voicePeak = 0;
+  /** Audio-time (ms of mic audio received) and the gate's look-ahead queue. */
+  private audioMs = 0;
+  private lastLoudEnd = -Infinity;
+  private delayLine: { pcm: Buffer; start: number; end: number; loud: boolean; muted: boolean }[] = [];
   private utterance = "";
   private utterTimer: NodeJS.Timeout | null = null;
   private expect: "draft" | "confirm" | "pay_confirm" = "draft";
   private draft: InvoiceDraft | null = null;
   private busy = false;
-  private bargeFrames = 0;
   private ended = false;
   private maxTimer: NodeJS.Timeout;
 
@@ -82,38 +124,75 @@ export class BoloSession {
     this.say(greeting);
   }
 
-  /** Mic audio from the browser (base64 PCM16 8 kHz), plus our own barge-in check. */
+  /** True while Bolo has lines queued, or her last line is still playing (+ echo tail). */
+  private isSpeaking(): boolean {
+    return this.pendingSays > 0 || Date.now() < this.speakingUntil;
+  }
+
+  /**
+   * Mic audio from the browser (base64 PCM16 8 kHz). Every frame still goes
+   * to Saaras — the stream must stay continuous — but as silence unless it
+   * is the main speaker talking while Bolo is quiet.
+   */
   onMedia(payload: string) {
-    if (this.ended) return;
-    if (this.stt && this.stt.readyState === WebSocket.OPEN)
-      this.stt.send(JSON.stringify({ audio: { data: payload, encoding: "audio/wav", sample_rate: 8000 } }));
-    // Saaras sends no VAD events, so detect a barger by ear: a few loud frames
-    // from the caller while we're mid-sentence flush our playback with a
-    // `clear`, exactly as the phone network would.
-    if (this.speaking) {
-      const buf = Buffer.from(payload, "base64");
-      let sum = 0;
-      const n = Math.min(buf.length >> 1, 160);
-      for (let i = 0; i < n; i++) {
-        const s = buf.readInt16LE(i * 2) / 0x8000;
-        sum += s * s;
-      }
-      this.bargeFrames = Math.sqrt(sum / Math.max(1, n)) > 0.03 ? this.bargeFrames + 1 : 0;
-      if (this.bargeFrames >= 3) {
-        this.bargeFrames = 0;
-        this.speaking = false;
-        this.busy = false;
-        this.wire.send(JSON.stringify({ event: "clear" }));
-      }
+    if (this.ended || !this.stt || this.stt.readyState !== WebSocket.OPEN) return;
+    const pcm = Buffer.from(payload, "base64");
+    const ms = (pcm.length / 2 / 8000) * 1000;
+    // Muted frames (Bolo talking, or her echo tail) never pass, whatever their level.
+    const muted = this.isSpeaking();
+    const loud = !muted && this.isMainVoice(pcm, ms);
+    const start = this.audioMs;
+    this.audioMs += ms;
+    this.delayLine.push({ pcm, start, end: this.audioMs, loud, muted });
+    this.flushDelayLine();
+  }
+
+  /**
+   * The gate decides each frame GATE_PREROLL_MS late, by audio time (not wall
+   * clock, so bursty network arrival can't skew it). That look-ahead lets the
+   * soft onset of a word — the "h" of "हाँ" — through when loud speech follows,
+   * instead of clipping it; the hangover keeps word endings.
+   */
+  private flushDelayLine() {
+    for (;;) {
+      const next = this.delayLine[0];
+      if (!next || next.end > this.audioMs - GATE_PREROLL_MS) break;
+      const head = this.delayLine.shift()!;
+      if (head.loud) this.lastLoudEnd = head.end;
+      const loudAhead = this.delayLine.some((f) => f.loud && f.start - head.end < GATE_PREROLL_MS);
+      const inHangover = head.start - this.lastLoudEnd < GATE_HANGOVER_MS;
+      const pass = !head.muted && (head.loud || loudAhead || inHangover);
+      const data = pass ? head.pcm.toString("base64") : Buffer.alloc(head.pcm.length).toString("base64");
+      this.stt!.send(JSON.stringify({ audio: { data, encoding: "audio/wav", sample_rate: 8000 } }));
     }
   }
 
-  /** The browser echoed a mark; nothing to do — playback tracking is client-side. */
-  onMark(_name: string) {}
+  /** Loudest-voice test: is this frame the person at the mic (not a quieter voice behind them)? */
+  private isMainVoice(pcm: Buffer, ms: number): boolean {
+    const n = pcm.length >> 1;
+    if (!n) return false;
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      const s = pcm.readInt16LE(i * 2) / 0x8000;
+      sum += s * s;
+    }
+    const level = Math.sqrt(sum / n);
+    // Only audible frames move the peak: they raise it, and they slowly relax it.
+    if (level > NOISE_FLOOR) {
+      this.voicePeak *= Math.pow(0.5, ms / PEAK_HALF_LIFE_MS);
+      this.voicePeak = Math.max(this.voicePeak, level);
+    }
+    return level > NOISE_FLOOR && level >= this.voicePeak * GATE_RATIO;
+  }
 
-  /** `clear` from the browser means our audio was flushed (barge-in or hang-up). */
+  /** The browser echoes our mark when its playback really reaches it: the truest "done speaking". */
+  onMark(name: string) {
+    if (name === "bolo_done" && this.pendingSays === 0) this.speakingUntil = Date.now() + ECHO_TAIL_MS;
+  }
+
+  /** `clear` from the browser: its playback was flushed (hang-up), so she isn't speaking. */
   onClear() {
-    this.speaking = false;
+    this.speakingUntil = 0;
   }
 
   stop() {
@@ -140,6 +219,8 @@ export class BoloSession {
       }
       if (msg.type === "data" && typeof msg.data?.transcript === "string" && msg.data.transcript.trim()) {
         sawData = true;
+        // Half-duplex: nothing heard while Bolo is talking counts as a turn.
+        if (this.isSpeaking()) return;
         const text = msg.data.transcript.trim();
         this.caption(this.script.role, text);
         this.utterance = text; // Saaras finals supersede earlier chunks
@@ -161,7 +242,7 @@ export class BoloSession {
   private async onUtterance() {
     const said = this.utterance.trim();
     this.utterance = "";
-    if (!said || this.busy || this.ended) return;
+    if (!said || this.busy || this.ended || this.isSpeaking()) return;
     this.busy = true;
     try {
       if (this.script.role === "merchant") await this.merchantTurn(said);
@@ -258,23 +339,32 @@ export class BoloSession {
 
   private say(text: string, after?: () => void) {
     this.caption("bolo", text);
-    this.speaking = true;
+    this.pendingSays++;
+    // Anything half-heard before she starts talking is dropped, not answered later.
+    this.utterance = "";
+    if (this.utterTimer) clearTimeout(this.utterTimer);
     this.synthQueue = this.synthQueue.then(async () => {
       try {
         const { pcm, sampleRate } = await speakPcm8k(text);
         const wire = resample8k(pcm, sampleRate);
-        for (let at = 0; at < wire.length; at += CHUNK_BYTES) {
-          if (!this.speaking) break; // barged in — drop the rest
-          const chunk = wire.subarray(at, at + CHUNK_BYTES);
-          this.wire.send(JSON.stringify({ event: "media", media: { payload: chunk.toString("base64") } }));
-          await new Promise((r) => setTimeout(r, 18)); // ~20 ms chunks, a hair under real time
+        const durationMs = (wire.length / 2 / 8000) * 1000;
+        const t0 = Date.now();
+        // Mute the mic for the whole line now, before the first packet plays.
+        this.speakingUntil = Math.max(this.speakingUntil, t0 + durationMs + ECHO_TAIL_MS);
+        // Packet i is due at t0 + i·100 ms; send each PREBUFFER_MS early, so the
+        // browser's queue never runs dry. The schedule is absolute, so timer
+        // jitter can't accumulate into gaps.
+        for (let i = 0, at = 0; at < wire.length; i++, at += PACKET_BYTES) {
+          const wait = t0 + i * PACKET_MS - PREBUFFER_MS - Date.now();
+          if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+          this.wire.send(JSON.stringify({ event: "media", media: { payload: wire.subarray(at, at + PACKET_BYTES).toString("base64") } }));
         }
-        if (this.speaking) this.wire.send(JSON.stringify({ event: "mark", mark: { name: "bolo_done" } }));
-        this.speaking = false;
+        this.wire.send(JSON.stringify({ event: "mark", mark: { name: "bolo_done" } }));
         after?.();
       } catch (err) {
         console.error(`[bolo] tts failed: ${(err as Error).message}`);
-        this.speaking = false;
+      } finally {
+        this.pendingSays--;
       }
     });
   }
