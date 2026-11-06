@@ -26,10 +26,13 @@
     "add-merchant": "tsx scripts/add-merchant.ts",
     "register-parent": "tsx scripts/register-parent.ts",
     "buy-ondc": "tsx scripts/buy-ondc.ts",
-    "mcp": "tsx packages/mcp/src/index.ts"
+    "mcp": "tsx packages/mcp/src/index.ts",
+    "deploy-whitechain": "tsx scripts/deploy-whitechain.ts",
+    "whitechain-ens": "tsx scripts/whitechain-ens.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "solc": "^0.8.26",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   },
