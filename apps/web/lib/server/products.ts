@@ -1,5 +1,6 @@
 import "server-only";
-import { publishProducts, readProductInfo, readProductList, resolveMerchant, type ProductInput } from "@sangam/ens";
+import { encodeFunctionData, type Hex } from "viem";
+import { RESOLVER_ABI, publishProducts, readProductInfo, readProductList, resolveMerchant, sepoliaClient, stampProducts, type ProductInput } from "@sangam/ens";
 import { inrPerUsd, paiseToUsdcAtomic } from "@sangam/shared";
 import { sangamApiUrl } from "./merchant";
 
@@ -27,7 +28,12 @@ export const storeUrl = (merchant: string) => `${sangamApiUrl().replace(/\/+$/, 
 
 export type PublishJob = {
   merchant: string;
-  state: "running" | "done" | "failed";
+  /** "needs-signature": an owned shop's records are ready for its wallet to sign (see `sign`). */
+  state: "running" | "needs-signature" | "done" | "failed";
+  /** Owned shops: the record writes for the shop's wallet, one transaction each. */
+  sign?: { from: string; to: string; data: string[] };
+  /** Owned shops: the product names to stamp verified once the wallet has signed. */
+  pendingNames?: string[];
   done: number;
   total: number;
   current: string;
@@ -43,10 +49,10 @@ const jobs = (g.__sangamProductJobs ??= new Map());
 
 export const productJob = (merchant: string) => jobs.get(merchant) ?? null;
 
-/** Start publishing a catalogue on ENS. One job per merchant at a time. */
-export function startPublish(merchant: string, products: ProductInput[]): PublishJob {
+/** Start publishing a catalogue on ENS. One job per merchant at a time. `owned`: the shop owns its name (its wallet signs the records). */
+export function startPublish(merchant: string, products: ProductInput[], owned?: { owner: string; resolver: string }): PublishJob {
   const running = jobs.get(merchant);
-  if (running?.state === "running") throw new Error("Your products are still being published; wait for that to finish.");
+  if (running?.state === "running" || running?.state === "needs-signature") throw new Error("Your products are still being published; finish that first.");
   const job: PublishJob = {
     merchant,
     state: "running",
@@ -65,8 +71,19 @@ export function startPublish(merchant: string, products: ProductInput[]): Publis
     storeUrl: storeUrl(merchant),
     log: (m) => job.log.push(m),
     onProgress: (done, total, current) => Object.assign(job, { done, total, current }),
+    ...(owned ? { ownedResolver: owned.resolver as Hex } : {}),
   })
     .then((r) => {
+      if (owned && r.unsigned) {
+        Object.assign(job, {
+          state: "needs-signature",
+          current: "",
+          txs: r.txs,
+          sign: { from: owned.owner, to: r.resolver, data: r.unsigned.map((calls) => encodeFunctionData({ abi: RESOLVER_ABI, functionName: "multicall", args: [calls] })) },
+          pendingNames: r.products.map((p) => p.ensName),
+        });
+        return;
+      }
       Object.assign(job, { state: "done", done: job.total, current: "", txs: r.txs, finishedAt: new Date().toISOString() });
       storeCache.delete(merchant);
     })
@@ -74,6 +91,28 @@ export function startPublish(merchant: string, products: ProductInput[]): Publis
       Object.assign(job, { state: "failed", error: err.message.split("\n")[0]!.slice(0, 300), finishedAt: new Date().toISOString() });
       console.error(`[products] ${merchant}: ${err.message}`);
     });
+  return job;
+}
+
+/**
+ * Owned shops: the wallet sent the record transactions. Check each one on
+ * chain (succeeded, sent to the shop's resolver), then Sangam stamps the new
+ * products verified, its one remaining right.
+ */
+export async function confirmPublish(merchant: string, txHashes: string[]): Promise<PublishJob> {
+  const job = jobs.get(merchant);
+  if (!job || job.state !== "needs-signature" || !job.sign) throw new Error("There's nothing waiting for your signature.");
+  if (txHashes.length !== job.sign.data.length) throw new Error(`Expected ${job.sign.data.length} signed transactions, got ${txHashes.length}.`);
+  const client = sepoliaClient();
+  for (const hash of txHashes) {
+    const r = await client.waitForTransactionReceipt({ hash: hash as Hex, timeout: 60_000 });
+    if (r.status !== "success" || r.to?.toLowerCase() !== job.sign.to.toLowerCase()) throw new Error(`${hash} didn't write your shop's records`);
+    job.txs.push({ step: "records (your wallet)", tx: hash });
+  }
+  const stamp = await stampProducts(job.sign.to as Hex, job.pendingNames ?? []);
+  job.txs.push({ step: "verified stamp (Sangam)", tx: stamp });
+  Object.assign(job, { state: "done", done: job.total, sign: undefined, pendingNames: undefined, finishedAt: new Date().toISOString() });
+  storeCache.delete(merchant);
   return job;
 }
 

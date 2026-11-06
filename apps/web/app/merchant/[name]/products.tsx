@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardHead, Spinner } from "../../components/ui";
 import { rupees, usdc } from "../../dashboard/format";
+import { connectWallet, injected, sendAndWait, walletError } from "@/lib/wallet-client";
 
 /*
  * The merchant's catalogue: upload products in bulk (CSV), check them, publish.
@@ -11,7 +12,16 @@ import { rupees, usdc } from "../../dashboard/format";
  */
 
 type Row = { line: number; label?: string; error?: string; input?: { title: string; priceInrPaise: number; description?: string; image?: string } };
-type Job = { state: "running" | "done" | "failed"; done: number; total: number; current: string; log: string[]; txs: { step: string; tx: string }[]; error: string | null };
+type Job = {
+  state: "running" | "needs-signature" | "done" | "failed";
+  done: number;
+  total: number;
+  current: string;
+  log: string[];
+  txs: { step: string; tx: string }[];
+  error: string | null;
+  sign?: { from: string; to: string; data: string[] };
+};
 type StoreProduct = { label: string; ensName: string; title: string; priceInrPaise: number; priceUsdcAtomic: string; image: string; rails: string[] };
 type View = { merchant: string; storeUrl?: string; job: Job | null; store: { products: StoreProduct[]; errors: string[] } | { error: string } | null };
 
@@ -41,7 +51,7 @@ export function ProductsCard({ merchant }: { merchant: string }) {
   }, [load]);
 
   // While publishing, poll every 2 s.
-  const running = view?.job?.state === "running";
+  const running = view?.job?.state === "running" || view?.job?.state === "needs-signature";
   useEffect(() => {
     if (!running) return;
     const t = setInterval(load, 2000);
@@ -57,6 +67,30 @@ export function ProductsCard({ merchant }: { merchant: string }) {
       setRows(body.rows ?? null);
       if (body.error) setError(body.error);
       if (!dryRun && res.ok) await load();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Owned shop: sign each prepared record transaction in the wallet that owns the name, then confirm.
+  async function signRecords() {
+    const sign = view?.job?.sign;
+    if (!sign) return;
+    setBusy("publish");
+    setError(null);
+    try {
+      const provider = injected();
+      if (!provider) throw new Error("Open this page in the browser with the wallet that owns your name (MetaMask).");
+      const account = await connectWallet(provider);
+      if (account.toLowerCase() !== sign.from.toLowerCase()) throw new Error(`Switch MetaMask to ${sign.from}, the wallet that owns your name.`);
+      const hashes: string[] = [];
+      for (const data of sign.data) hashes.push(await sendAndWait(provider, { from: sign.from, to: sign.to, data }));
+      const res = await fetch("/api/merchant/products", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirm: hashes }) });
+      const body = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(body.error ?? `Could not finish (${res.status})`);
+      await load();
+    } catch (err) {
+      setError(walletError(err));
     } finally {
       setBusy(null);
     }
@@ -127,6 +161,21 @@ export function ProductsCard({ merchant }: { merchant: string }) {
               </p>
             )}
             {job.state === "failed" && <p>Publishing stopped: {job.error}</p>}
+            {job.state === "needs-signature" && job.sign && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p>
+                  Product names are ready. Your shop owns its name, so <span className="font-medium">your wallet writes the records</span>: sign {job.sign.data.length} transaction
+                  {job.sign.data.length === 1 ? "" : "s"} in MetaMask.
+                </p>
+                <button
+                  onClick={signRecords}
+                  disabled={busy !== null}
+                  className="rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0b0d1a]"
+                >
+                  {busy === "publish" ? "Confirm in MetaMask…" : "Sign in MetaMask"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

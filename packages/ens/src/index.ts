@@ -9,3 +9,4 @@ export * from "./setup.ts";
 export * from "./subnames.ts";
 export * from "./trust.ts";
 export * from "./products.ts";
+export * from "./ownership.ts";

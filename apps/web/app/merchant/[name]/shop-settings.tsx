@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import type { Me } from "@/lib/types";
 import { Spinner } from "../../components/ui";
+import { connectWallet, injected, sendAndWait, walletError } from "@/lib/wallet-client";
 
 /*
  * The merchant's price and UPI handle, editable from the profile. Both are
@@ -25,17 +26,29 @@ export function ShopSettings({ me, onSaved }: { me: Me; onSaved: (me: Me) => voi
     setError(null);
     setSaved(null);
     try {
-      const res = await fetch("/api/merchant/shop", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ priceInr: Number(price), upiHandle: upi }),
-      });
-      const body = (await res.json()) as { me?: Me; txs?: { tx: string }[]; offline?: boolean; error?: string };
+      const patch = (extra: Record<string, unknown>) =>
+        fetch("/api/merchant/shop", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ priceInr: Number(price), upiHandle: upi, ...extra }),
+        });
+      let res = await patch({});
+      let body = (await res.json()) as { me?: Me; txs?: { tx: string }[]; offline?: boolean; error?: string; sign?: { from: string; to: string; data: string } };
+      // An owned name: only the merchant's wallet can write it, so sign the change in MetaMask.
+      if (res.ok && body.sign) {
+        const provider = injected();
+        if (!provider) throw new Error("Your name is owned by your wallet; open this page in a browser with that wallet (MetaMask).");
+        const account = await connectWallet(provider);
+        if (account.toLowerCase() !== body.sign.from.toLowerCase()) throw new Error(`Switch MetaMask to ${body.sign.from}, the wallet that owns your name.`);
+        const txHash = await sendAndWait(provider, body.sign);
+        res = await patch({ txHash });
+        body = (await res.json()) as typeof body;
+      }
       if (!res.ok || !body.me) throw new Error(body.error ?? `Save failed (${res.status})`);
       onSaved(body.me);
       setSaved({ tx: body.txs?.at(-1)?.tx ?? null, at: new Date().toLocaleTimeString() });
     } catch (err) {
-      setError((err as Error).message);
+      setError(walletError(err));
     } finally {
       setBusy(false);
     }

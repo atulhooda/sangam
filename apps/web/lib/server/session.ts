@@ -164,6 +164,7 @@ export function publicMe(identity: VerifiedIdentity, switchTo: Role | null = nul
           priceInrPaise: identity.shop.priceInrPaise,
           endpoint: identity.shop.endpoint,
           depositAccountId: identity.shop.depositAccountId ?? null,
+          owned: identity.shop.owned ? { owner: identity.shop.owned.owner, resolver: identity.shop.owned.resolver, at: identity.shop.owned.at } : null,
           publishedUrl: identity.shop.publishedUrl ?? null,
           ensTxs: identity.shop.ensTxs ?? [],
           provisionedAt: identity.shop.provisionedAt ?? null,

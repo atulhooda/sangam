@@ -1,4 +1,4 @@
-import { MAX_PRODUCTS, parseProductCsv, productJob, startPublish, storeUrl, storefront } from "@/lib/server/products";
+import { MAX_PRODUCTS, confirmPublish, parseProductCsv, productJob, startPublish, storeUrl, storefront } from "@/lib/server/products";
 import { currentUser } from "@/lib/server/session";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +30,15 @@ export async function POST(req: Request) {
   if (!me.identity.shop?.provisionedAt) {
     return Response.json({ error: "Your ENS name isn't set up yet. Finish setup on your profile first." }, { status: 409 });
   }
-  const body = (await req.json().catch(() => ({}))) as { csv?: unknown; dryRun?: unknown };
+  const body = (await req.json().catch(() => ({}))) as { csv?: unknown; dryRun?: unknown; confirm?: unknown };
+  // Owned shops: the wallet signed the record transactions; check them and finish.
+  if (Array.isArray(body.confirm)) {
+    try {
+      return Response.json({ job: await confirmPublish(me.identity.label, body.confirm.map(String)) });
+    } catch (err) {
+      return Response.json({ error: (err as Error).message.split("\n")[0] }, { status: 409 });
+    }
+  }
   const csv = typeof body.csv === "string" ? body.csv : "";
   if (csv.length > 200_000) return Response.json({ error: "That file is too big." }, { status: 413 });
 
@@ -43,7 +51,8 @@ export async function POST(req: Request) {
     return Response.json({ rows, error: bad.length ? `Fix ${bad.length} line${bad.length === 1 ? "" : "s"} first.` : undefined }, { status: bad.length ? 400 : 200 });
   }
   try {
-    const job = startPublish(me.identity.label, good.map((r) => r.input!));
+    const owned = me.identity.shop?.owned;
+    const job = startPublish(me.identity.label, good.map((r) => r.input!), owned ? { owner: owned.owner, resolver: owned.resolver } : undefined);
     return Response.json({ rows, job }, { status: 202 });
   } catch (err) {
     return Response.json({ rows, error: (err as Error).message }, { status: 409 });

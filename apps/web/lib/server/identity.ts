@@ -54,6 +54,12 @@ export type MerchantShop = {
   provisionedAt?: string;
   /** Last setup failure, shown on the desk with a retry button. */
   error?: string;
+  /**
+   * Set once the merchant owns its name: the token is in its wallet and its
+   * records live in its own resolver, where only it can write (Sangam keeps
+   * only the verified stamp). From then on edits are signed by that wallet.
+   */
+  owned?: { owner: string; resolver: string; tokenId: string; at: string; txs: { step: string; tx: string }[] };
 };
 
 /**

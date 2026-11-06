@@ -42,6 +42,7 @@ export async function provisionMerchant(nullifier: string): Promise<VerifiedIden
     let identity = findIdentity(nullifier, "merchant");
     if (!identity?.label) throw new Error("Claim your shop name first.");
     if (!identity.shop?.upiHandle) throw new Error("Add the UPI handle your payouts go to first.");
+    if (identity.shop.owned) throw new Error(`${identity.label} belongs to your wallet now; change it from your wallet.`);
     const suffix = `.${parentName()}`;
     if (!identity.label.endsWith(suffix)) throw new Error(`${identity.label} is not under ${parentName()}`);
     const label = identity.label.slice(0, -suffix.length);

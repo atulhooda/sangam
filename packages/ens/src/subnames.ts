@@ -102,10 +102,9 @@ export async function issueSubname(label: string, merchant: MerchantInput, log: 
       if (!(revert instanceof ContractFunctionRevertedError && revert.data?.errorName === "LabelAlreadyRegistered")) throw err;
     }
   } else if (existingResolver.toLowerCase() !== resolver.toLowerCase()) {
-    log(`pointing ${name} at Sangam's resolver…`);
-    const tx = await wallet.writeContract({ address: registry, abi: REGISTRY_ABI, functionName: "setResolver", args: [BigInt(labelhash(label)), resolver] });
-    await client.waitForTransactionReceipt({ hash: tx });
-    txs.push({ step: "setResolver", tx });
+    // The merchant owns this name (its own resolver, see ownership.ts). Sangam
+    // must not pull it back: only the merchant's wallet writes its records now.
+    throw new Error(`${name} is owned by its merchant (resolver ${existingResolver}); only the merchant's wallet can change its records`);
   }
 
   // 2. Write all the records (five, plus sangam.status when given) in one transaction.

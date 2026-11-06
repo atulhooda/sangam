@@ -125,8 +125,14 @@ export async function publishProducts(
     storeUrl?: string;
     log?: Log;
     onProgress?: (done: number, total: number, current: string) => void;
+    /**
+     * The shop owns its name and has its own resolver: product names point at
+     * it, and the record writes are returned (`unsigned`) for the shop's
+     * wallet to sign instead of being sent. Sangam then stamps them verified.
+     */
+    ownedResolver?: Hex;
   },
-): Promise<{ products: Product[]; registry: Hex; txs: ProductTx[] }> {
+): Promise<{ products: Product[]; registry: Hex; txs: ProductTx[]; unsigned?: Hex[][]; resolver: Hex }> {
   const log = opts.log ?? (() => undefined);
   const name = normalize(merchantName);
   const merchant = await resolveMerchant(name);
@@ -141,10 +147,20 @@ export async function publishProducts(
   const dupes = rows.map((r) => r.label).filter((l, i, all) => all.indexOf(l) !== i);
   if (dupes.length) throw new Error(`two products would share a name: ${[...new Set(dupes)].join(", ")}`);
 
+  // An owned shop's records live in its own resolver: publishing to Sangam's
+  // would repoint its product names away from it. Refuse unless told.
+  const shopResolver = await sepoliaClient().readContract({ address: sangamContracts().registry, abi: REGISTRY_ABI, functionName: "getResolver", args: [name.slice(0, -`.${parentName()}`.length)] });
+  if (!opts.ownedResolver && shopResolver.toLowerCase() !== sangamContracts().resolver.toLowerCase()) {
+    throw new Error(`${name} is owned by its merchant; its wallet has to sign its product records`);
+  }
+  if (opts.ownedResolver && shopResolver.toLowerCase() !== opts.ownedResolver.toLowerCase()) {
+    throw new Error(`${name}'s resolver is ${shopResolver}, not ${opts.ownedResolver}`);
+  }
   const { registry, txs } = await ensureMerchantRegistry(name, log);
   const client = sepoliaClient();
   const wallet = sangamWallet();
-  const { resolver } = sangamContracts();
+  const resolver = opts.ownedResolver ?? sangamContracts().resolver;
+  const owned = !!opts.ownedResolver;
   const parentLabel = parentName().split(".")[0]!;
   const expiry = await client.readContract({ address: ENSV2_SEPOLIA.ETHRegistry, abi: REGISTRY_ABI, functionName: "getExpiry", args: [BigInt(labelhash(parentLabel))] });
 
@@ -152,7 +168,14 @@ export async function publishProducts(
   for (const [i, p] of rows.entries()) {
     opts.onProgress?.(i, rows.length, p.ensName);
     const current = await client.readContract({ address: registry, abi: REGISTRY_ABI, functionName: "getResolver", args: [p.label] });
-    if (current !== ZERO) continue;
+    if (current !== ZERO) {
+      if (current.toLowerCase() !== resolver.toLowerCase()) {
+        const tx = await wallet.writeContract({ address: registry, abi: REGISTRY_ABI, functionName: "setResolver", args: [BigInt(labelhash(p.label)), resolver] });
+        await client.waitForTransactionReceipt({ hash: tx });
+        txs.push({ step: `point ${p.label} at the shop's resolver`, tx });
+      }
+      continue;
+    }
     log(`registering ${p.ensName}…`);
     const tx = await wallet.writeContract({ address: registry, abi: REGISTRY_ABI, functionName: "register", args: [p.label, wallet.account.address, ZERO, resolver, PRODUCT_ROLES, expiry] });
     await client.waitForTransactionReceipt({ hash: tx });
@@ -170,7 +193,8 @@ export async function publishProducts(
       set(MERCHANT_TEXT_KEYS.network, merchant.network),
       set(MERCHANT_TEXT_KEYS.priceInrPaise, String(p.priceInrPaise)),
       set(MERCHANT_TEXT_KEYS.upiHandle, merchant.upiHandle),
-      set(STATUS_TEXT_KEY, "verified"),
+      // The verified stamp is Sangam's to write; on an owned shop it's written separately (stampProducts).
+      ...(owned ? [] : [set(STATUS_TEXT_KEY, "verified")]),
       // The shop's deposit address as the product's standard address record, so a wallet can pay the product by name.
       ...(merchant.evmPayTo
         ? EVM_COIN_TYPES.map((coinType) => encodeFunctionData({ abi: RESOLVER_ABI, functionName: "setAddress", args: [n, coinType, merchant.evmPayTo as `0x${string}`] }))
@@ -189,6 +213,10 @@ export async function publishProducts(
   if (opts.storeUrl) {
     batches[batches.length - 1]!.push(encodeFunctionData({ abi: RESOLVER_ABI, functionName: "setText", args: [dns(name), STORE_TEXT_KEY, opts.storeUrl] }));
   }
+  if (owned) {
+    opts.onProgress?.(rows.length, rows.length, "");
+    return { products: rows, registry, txs, unsigned: batches, resolver };
+  }
   for (const [i, calls] of batches.entries()) {
     log(`writing records ${i + 1}/${batches.length}…`);
     const tx = await wallet.writeContract({ address: resolver, abi: RESOLVER_ABI, functionName: "multicall", args: [calls] });
@@ -198,7 +226,16 @@ export async function publishProducts(
   opts.onProgress?.(rows.length, rows.length, "");
   for (const r of rows) forgetMerchant(r.ensName);
   forgetMerchant(name);
-  return { products: rows, registry, txs };
+  return { products: rows, registry, txs, resolver };
+}
+
+/** On an owned shop: Sangam's one right, the verified stamp, written on each new product after the shop signed its records. */
+export async function stampProducts(resolver: Hex, productNames: string[], status: "verified" | "suspended" = "verified"): Promise<Hex> {
+  const calls = productNames.map((n) => encodeFunctionData({ abi: RESOLVER_ABI, functionName: "setText", args: [dns(normalize(n)), STATUS_TEXT_KEY, status] }));
+  const tx = await sangamWallet().writeContract({ address: resolver, abi: RESOLVER_ABI, functionName: "multicall", args: [calls] });
+  await sepoliaClient().waitForTransactionReceipt({ hash: tx });
+  for (const n of productNames) forgetMerchant(n);
+  return tx;
 }
 
 /** A product's display records (its price and payout records come from resolveMerchant). */

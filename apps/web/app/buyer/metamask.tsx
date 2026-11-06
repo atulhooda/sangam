@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { encodeFunctionData, erc20Abi, getAddress, type Hex } from "viem";
+import { encodeFunctionData, erc20Abi, type Hex } from "viem";
 import { Card, CardHead, Spinner } from "../components/ui";
 import { usdc } from "../dashboard/format";
-import { SEPOLIA_CHAIN_HEX, SEPOLIA_USDC, linkMessage } from "@/lib/wallet-link";
+import { SEPOLIA_USDC, linkMessage } from "@/lib/wallet-link";
+import { connectWallet, injected as eth, sendAndWait, walletError, type Eth } from "@/lib/wallet-client";
 
 /*
  * The buyer's own MetaMask, for agent payments on Sepolia. Link once (a
@@ -22,33 +23,6 @@ export type MetaMaskView = {
   explorer?: string;
   error?: string;
 };
-
-type Eth = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
-const eth = () => (typeof window !== "undefined" ? (window as unknown as { ethereum?: Eth }).ethereum : undefined);
-
-async function onSepolia(provider: Eth) {
-  try {
-    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: SEPOLIA_CHAIN_HEX }] });
-  } catch (err) {
-    if ((err as { code?: number }).code !== 4902) throw err;
-    await provider.request({
-      method: "wallet_addEthereumChain",
-      params: [{ chainId: SEPOLIA_CHAIN_HEX, chainName: "Sepolia", nativeCurrency: { name: "Sepolia ETH", symbol: "ETH", decimals: 18 }, rpcUrls: ["https://ethereum-sepolia-rpc.publicnode.com"], blockExplorerUrls: ["https://sepolia.etherscan.io"] }],
-    });
-  }
-}
-
-async function waitForReceipt(provider: Eth, hash: string) {
-  for (let i = 0; i < 60; i++) {
-    const r = (await provider.request({ method: "eth_getTransactionReceipt", params: [hash] })) as { status?: string } | null;
-    if (r) {
-      if (r.status !== "0x1") throw new Error("The transaction failed in your wallet.");
-      return;
-    }
-    await new Promise((res) => setTimeout(res, 2000));
-  }
-  throw new Error("Still waiting for the transaction; refresh in a minute.");
-}
 
 export function MetaMaskCard({ onChange }: { onChange: (v: MetaMaskView | null) => void }) {
   const [view, setView] = useState<MetaMaskView | null>(null);
@@ -79,8 +53,7 @@ export function MetaMaskCard({ onChange }: { onChange: (v: MetaMaskView | null) 
       await fn(provider);
       await load();
     } catch (err) {
-      const e = err as { message?: string; code?: number };
-      setError(e.code === 4001 ? "You cancelled it in the wallet." : (e.message ?? "Something went wrong.").split("\n")[0]!);
+      setError(walletError(err));
     } finally {
       setBusy(null);
     }
@@ -88,10 +61,8 @@ export function MetaMaskCard({ onChange }: { onChange: (v: MetaMaskView | null) 
 
   const connect = () =>
     run("connect", async (provider) => {
-      const [account] = (await provider.request({ method: "eth_requestAccounts" })) as string[];
-      if (!account || !view) throw new Error("No account selected.");
-      await onSepolia(provider);
-      const address = getAddress(account);
+      if (!view) throw new Error("Still loading; try again.");
+      const address = await connectWallet(provider);
       const issuedAt = new Date().toISOString();
       const signature = await provider.request({ method: "personal_sign", params: [linkMessage(view.agent, address, issuedAt), address] });
       const res = await fetch("/api/buyer/metamask", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address, issuedAt, signature }) });
@@ -102,10 +73,8 @@ export function MetaMaskCard({ onChange }: { onChange: (v: MetaMaskView | null) 
   const approve = (atomic: bigint) =>
     run(atomic === 0n ? "revoke" : "approve", async (provider) => {
       if (!view?.address) throw new Error("Connect the wallet first.");
-      await onSepolia(provider);
       const data = encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [view.agent as Hex, atomic] });
-      const hash = (await provider.request({ method: "eth_sendTransaction", params: [{ from: view.address, to: SEPOLIA_USDC, data }] })) as string;
-      await waitForReceipt(provider, hash);
+      await sendAndWait(provider, { from: view.address, to: SEPOLIA_USDC, data });
     });
 
   const unlink = () =>

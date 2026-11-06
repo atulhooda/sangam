@@ -1,4 +1,5 @@
-import { forgetMerchant, issueSubname, parentName } from "@sangam/ens";
+import { encodeFunctionData } from "viem";
+import { RESOLVER_ABI, forgetMerchant, issueSubname, merchantRecordCalls, parentName, resolveMerchant, sepoliaClient } from "@sangam/ens";
 import { updateMerchantShop } from "@/lib/server/identity";
 import { currentUser, otherRole, publicMe } from "@/lib/server/session";
 
@@ -23,7 +24,31 @@ export async function PATCH(req: Request) {
     return Response.json({ error: "Your ENS name isn't set up yet. Finish setup on your profile first." }, { status: 409 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { priceInr?: unknown; upiHandle?: unknown };
+  const body = (await req.json().catch(() => ({}))) as { priceInr?: unknown; upiHandle?: unknown; txHash?: unknown };
+
+  // A merchant that owns its name signs its own changes. Step 2: the wallet sent
+  // the transaction; check it on chain and refresh the profile from ENS.
+  if (shop.owned && typeof body.txHash === "string") {
+    try {
+      const receipt = await sepoliaClient().waitForTransactionReceipt({ hash: body.txHash as `0x${string}`, timeout: 60_000 });
+      if (receipt.status !== "success" || receipt.to?.toLowerCase() !== shop.owned.resolver.toLowerCase()) throw new Error("that transaction didn't update your records");
+      // Public RPCs lag a block or two: wait until ENS shows what was just written.
+      const wantPrice = Math.round(Number(body.priceInr) * 100);
+      const wantUpi = String(body.upiHandle ?? "").trim().toLowerCase();
+      let rec = null;
+      for (let i = 0; i < 12; i++) {
+        forgetMerchant(me.identity.label);
+        rec = await resolveMerchant(me.identity.label).catch(() => null);
+        if (rec && rec.priceInrPaise === wantPrice && rec.upiHandle === wantUpi) break;
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+      if (!rec) throw new Error("couldn't read your updated records yet; refresh in a moment");
+      const identity = await updateMerchantShop(me.identity.nullifier, { priceInrPaise: rec.priceInrPaise, upiHandle: rec.upiHandle });
+      return Response.json({ ok: true, txs: [{ step: "update (your wallet)", tx: body.txHash }], me: publicMe(identity, otherRole(me)) });
+    } catch (err) {
+      return Response.json({ error: (err as Error).message.split("\n")[0] }, { status: 502 });
+    }
+  }
   const priceInr = body.priceInr === undefined ? shop.priceInrPaise / 100 : Number(body.priceInr);
   if (!Number.isFinite(priceInr) || priceInr < 1 || priceInr > 100_000) {
     return Response.json({ error: "Enter a price per order between ₹1 and ₹1,00,000." }, { status: 400 });
@@ -42,6 +67,21 @@ export async function PATCH(req: Request) {
   const name = me.identity.label;
   const suffix = `.${parentName()}`;
   if (!name.endsWith(suffix)) return Response.json({ error: `${name} is not under ${parentName()}.` }, { status: 409 });
+  // Step 1 for an owned name: Sangam can't write it, so it hands back the
+  // transaction for the merchant's wallet to sign.
+  if (shop.owned) {
+    const data = encodeFunctionData({
+      abi: RESOLVER_ABI,
+      functionName: "multicall",
+      args: [
+        merchantRecordCalls([
+          { name, key: "sangam.priceInrPaise", value: String(priceInrPaise) },
+          { name, key: "sangam.upi", value: upiHandle },
+        ]),
+      ],
+    });
+    return Response.json({ sign: { from: shop.owned.owner, to: shop.owned.resolver, data } });
+  }
   if (running.has(name)) return Response.json({ error: "A change is already being saved. Wait a moment." }, { status: 409 });
   running.add(name);
   try {

@@ -38,6 +38,8 @@ export type Me = {
     priceInrPaise: number;
     endpoint: string | null;
     depositAccountId: string | null;
+    /** Set once the merchant owns its ENS name (token in its wallet, its own resolver). */
+    owned?: { owner: string; resolver: string; at: string } | null;
     publishedUrl: string | null;
     ensTxs: { step: string; tx: string }[];
     provisionedAt: string | null;
