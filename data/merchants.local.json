@@ -9,7 +9,7 @@
   },
   "bakery.sangam.eth": {
     "endpoint": "https://bakery-production-0c21.up.railway.app/demo/shop/bakery/book",
-    "hederaPayTo": "0.0.1003",
+    "hederaPayTo": "0.0.11227656",
     "network": "hedera:testnet",
     "priceInrPaise": "45000",
     "upiHandle": "crumbsandco@razorpay",
