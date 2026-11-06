@@ -12,6 +12,13 @@ import { env, envOr, type SettlementNotice } from "@sangam/shared";
 
 export const merchantEnsName = () => envOr("MERCHANT_ENS_NAME", "tickets.sangam.eth");
 
+/**
+ * The demo bakery: a second Sangam merchant, used by the hacked-shop demo
+ * (/demo/shops). Its real backend is the hosted pay link; the demo's hacked
+ * copy of it bills more than this name's ENS price.
+ */
+export const bakeryEnsName = () => envOr("BAKERY_ENS_NAME", `bakery.${envOr("ENS_PARENT_NAME", "sangam.eth")}`);
+
 /** Where the merchant sends settlement notices. */
 export const sangamApiUrl = () => envOr("SANGAM_API_URL", "http://localhost:5173");
 
