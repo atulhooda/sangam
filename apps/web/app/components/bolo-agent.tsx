@@ -21,24 +21,69 @@ const BoloRobot = dynamic(() => import("./bolo-robot"), {
 
 const SIZE = 160;
 type Phase = "idle" | VoicePhase | "working";
-type BuyerResult = { id: string; status: string; intent: "pay" | null };
 type MerchantResult = { id: string; status: string; invoiceId: string | null; payUrl: string | null };
 type Pos = { x: number; y: number };
+export type BuyTarget = { ensName: string; priceInrPaise?: number };
 
 const DEMO_CYCLE: Phase[] = ["connecting", "bolo", "listening", "thinking", "working", "ended", "error", "idle"];
 
-export function BoloAgent({ role, name, demo = false }: { role: "buyer" | "merchant"; name?: string; demo?: boolean }) {
+/** Words from an ENS name an agent might say out loud: "truffle-cake.bakery.sangam.eth" → ["truffle","cake","bakery"]. */
+function keywordsFor(ensName: string): string[] {
+  return ensName
+    .replace(/\.sangam\.eth$/i, "")
+    .replace(/\.eth$/i, "")
+    .split(/[.\-_\s]+/)
+    .map((w) => w.toLowerCase())
+    .filter((w) => w.length >= 3 && w !== "sangam");
+}
+/** Match spoken text to the best verified merchant in the list, or null. */
+function matchTarget(text: string, targets: BuyTarget[]): BuyTarget | null {
+  const t = ` ${text.toLowerCase()} `;
+  let best: BuyTarget | null = null;
+  let bestScore = 0;
+  for (const tg of targets) {
+    let score = 0;
+    for (const k of keywordsFor(tg.ensName)) if (t.includes(k)) score += k.length;
+    if (score > bestScore) {
+      bestScore = score;
+      best = tg;
+    }
+  }
+  return bestScore >= 3 ? best : null;
+}
+const CONFIRM_RE = /\b(haan|haa|haanji|ji haan|yes|yep|bhar ?do|bharo|kar ?do|khareed\w*|buy|le ?lo|pakka|confirm)\b/i;
+
+export function BoloAgent({
+  role,
+  name,
+  demo = false,
+  targets,
+  onDone,
+}: {
+  role: "buyer" | "merchant";
+  name?: string;
+  demo?: boolean;
+  targets?: BuyTarget[];
+  onDone?: () => void;
+}) {
   const [enabled, setEnabled] = useState<boolean | null>(demo ? true : null);
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [url] = useState("");
   const [result, setResult] = useState<MerchantResult | null>(null);
+  const [target, setTarget] = useState<BuyTarget | null>(null);
+  const [bought, setBought] = useState<string | null>(null);
   const [pos, setPos] = useState<Pos | null>(null);
   const voice = useRef<BoloVoice | null>(null);
   const agentRun = useAgentRun();
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+  // Live refs the voice-caption closure reads without being re-created.
+  const targetsRef = useRef<BuyTarget[]>(targets ?? []);
+  targetsRef.current = targets ?? [];
+  const targetRef = useRef<BuyTarget | null>(null);
+  const buyingRef = useRef(false);
+  const confirmArmedAt = useRef(0);
 
   useEffect(() => {
     if (demo) return;
@@ -104,39 +149,61 @@ export function BoloAgent({ role, name, demo = false }: { role: "buyer" | "merch
     return null;
   }, []);
 
-  const buyerPay = useCallback(
-    async (sessionId: string) => {
+  const sayLine = (text: string) => {
+    try {
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "hi-IN";
+      u.rate = 1;
+      window.speechSynthesis.speak(u);
+    } catch {
+      /* speech not available */
+    }
+  };
+
+  // Buy the named merchant as the agent (the /api/agent/buy path: ENS checks,
+  // fair-invoice, USDC on Hedera → the usual settlement pipeline).
+  const doVoiceBuy = useCallback(
+    async (t: BuyTarget) => {
+      if (buyingRef.current) return;
+      buyingRef.current = true;
       setPhase("working");
-      const s = await pollSession<BuyerResult>(sessionId);
-      if (s?.intent !== "pay") {
-        setPhase("idle");
-        return;
-      }
-      const link = url.trim();
-      if (!/^https?:\/\//i.test(link)) {
-        setError("Bolo said pay, but there's no invoice link pasted.");
-        setPhase("idle");
-        return;
-      }
-      const { verdict } = await runPayAsAgent(
-        agentRun.run,
-        { title: "Bolo pay", target: new URL(link, window.location.origin).host },
-        { kind: "url", url: link },
-        "/api/pay",
-      );
-      if (verdict.kind !== "paid") {
-        setError(
-          verdict.kind === "refused"
-            ? "Agent ne mana kar diya — invoice bharosa mandit nahi tha."
-            : verdict.kind === "error"
-              ? verdict.message
-              : "Payment nahi hui.",
-        );
+      setError(null);
+      sayLine(`Theek hai, ${t.ensName.replace(/\.sangam\.eth$/, "")} se khareed raha hoon.`);
+      const { verdict } = await runPayAsAgent(agentRun.run, { title: "Buying by voice", target: t.ensName }, { ensName: t.ensName }, "/api/agent/buy");
+      if (verdict.kind === "paid") {
+        setBought(`${t.ensName} — ho gaya ✓`);
+        sayLine("Ho gaya! Payment complete.");
+        onDone?.();
+      } else {
+        setError(verdict.kind === "refused" ? verdict.message : verdict.kind === "error" ? verdict.message : "Payment nahi hui.");
       }
       setPhase("idle");
+      buyingRef.current = false;
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [url, pollSession],
+    [agentRun.run, onDone],
+  );
+
+  // Drive voice-buy from what the buyer says: match a merchant, read the price
+  // back, and on a spoken "haan" (armed a moment after the read-back, so the
+  // read-back's own echo can't trigger it) make the purchase.
+  const onBuyerCaption = useCallback(
+    (text: string) => {
+      if (buyingRef.current || role !== "buyer" || targetsRef.current.length === 0) return;
+      const m = matchTarget(text, targetsRef.current);
+      if (m && m.ensName !== targetRef.current?.ensName) {
+        targetRef.current = m;
+        setTarget(m);
+        setBought(null);
+        const price = m.priceInrPaise ? ` lगभग ₹${(m.priceInrPaise / 100).toFixed(0)},` : "";
+        sayLine(`${m.ensName.replace(/\.sangam\.eth$/, "")} se,${price} bharu? Haan boliye.`);
+        confirmArmedAt.current = Date.now() + 1500;
+      }
+      if (targetRef.current && Date.now() >= confirmArmedAt.current && CONFIRM_RE.test(text) && !/bharu|boliye/i.test(text)) {
+        void doVoiceBuy(targetRef.current);
+      }
+    },
+    [role, doVoiceBuy],
   );
 
   const merchantFinish = useCallback(
@@ -153,30 +220,38 @@ export function BoloAgent({ role, name, demo = false }: { role: "buyer" | "merch
     setError(null);
     setResult(null);
     setCaptions([]);
+    setBought(null);
+    setTarget(null);
+    targetRef.current = null;
+    buyingRef.current = false;
     setOpen(true);
     try {
-      const body = role === "buyer" ? { role, invoiceUrl: url.trim() || undefined } : { role };
       const created = (await (
         await fetch("/api/bolo/session", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ role }),
         })
       ).json()) as { session_id: string; ws_url: string; token: string; error?: string };
       if (created.error || !created.ws_url) throw new Error(created.error ?? "session refused");
       voice.current = new BoloVoice(created.ws_url, created.token, {
         onPhase: (p) => {
           setPhase(p);
-          if (p === "ended") void (role === "buyer" ? buyerPay(created.session_id) : merchantFinish(created.session_id));
+          // Merchant: on end, collect the invoice the voice server made.
+          // Buyer: the purchase is driven live from captions, so just idle.
+          if (p === "ended" && role === "merchant") void merchantFinish(created.session_id);
         },
-        onCaption: (c) => setCaptions((prev) => [...prev.slice(-6), c]),
+        onCaption: (c) => {
+          setCaptions((prev) => [...prev.slice(-6), c]);
+          if (c.role === "buyer") onBuyerCaption(c.text);
+        },
       });
       await voice.current.start();
     } catch (err) {
       setError((err as Error).message);
       setPhase("idle");
     }
-  }, [role, url, buyerPay, merchantFinish]);
+  }, [role, merchantFinish, onBuyerCaption]);
 
   const hangUp = useCallback(() => voice.current?.stop(), []);
 
@@ -285,6 +360,21 @@ export function BoloAgent({ role, name, demo = false }: { role: "buyer" | "merch
 
               {error && <p className="rounded-xl bg-badbg px-3 py-2 text-sm text-bad">{error}</p>}
 
+              {/* buyer voice-buy: matched merchant + confirm */}
+              {role === "buyer" && target && !bought && phase !== "working" && (
+                <div className="space-y-2 rounded-2xl border border-accent/40 bg-accentbg/30 px-3.5 py-3">
+                  <p className="text-xs text-muted">Samajh gayi — khareedein?</p>
+                  <p className="mono text-sm font-semibold text-accent">{target.ensName}{target.priceInrPaise ? ` · ₹${(target.priceInrPaise / 100).toFixed(0)}` : ""}</p>
+                  <button
+                    onClick={() => void doVoiceBuy(target)}
+                    className="w-full rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 dark:text-[#0b0d1a]"
+                  >
+                    “Haan” boliye ya yahan tap kijiye → buy
+                  </button>
+                </div>
+              )}
+              {role === "buyer" && bought && <p className="rounded-2xl bg-okbg px-3.5 py-3 text-center text-sm font-medium text-ok">{bought} — settlement neeche dikh raha hai 🎉</p>}
+
               {result?.status === "completed" && result.payUrl && (
                 <div className="space-y-1 rounded-2xl bg-okbg px-3.5 py-3 text-center">
                   <p className="text-sm font-medium text-ok">इनवॉइस बन गया ✓</p>
@@ -303,8 +393,8 @@ export function BoloAgent({ role, name, demo = false }: { role: "buyer" | "merch
                   ■ Hang up
                 </button>
               )}
-              {!inCall && role === "buyer" && (
-                <p className="text-[11px] text-muted">Robot ko tap karke boliye — “kitna dena hai?” ya “bhar do”.</p>
+              {!inCall && role === "buyer" && !target && (
+                <p className="text-[11px] text-muted">Tap karke merchant ka naam boliye — jaise “bakery se khareedo” — phir “haan”.</p>
               )}
             </div>
           </div>

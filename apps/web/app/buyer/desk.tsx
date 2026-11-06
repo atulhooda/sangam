@@ -402,7 +402,11 @@ export function BuyerDesk({ me }: { me: Me }) {
         </Card>
       </main>
       <AgentRunOverlay state={agentRun.state} onClose={agentRun.close} />
-      <BoloAgent role="buyer" />
+      <BoloAgent
+        role="buyer"
+        targets={verified.map((m) => ({ ensName: m.ensName, priceInrPaise: m.priceInrPaise }))}
+        onDone={() => void loadWallet()}
+      />
     </div>
   );
 }
