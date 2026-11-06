@@ -62,6 +62,25 @@ export async function assertVerifiedPayee(invoice: InvoiceOption): Promise<Trust
   if (record.status !== "verified") {
     throw new UntrustedPayeeError(`Refused: ${ensName} has not been verified by Sangam (no Self proof and company certificate on record).`, "unverified");
   }
+  // A product name (truffle-cake.bakery.sangam.eth) is only as good as its shop:
+  // the shop must still be verified, and the product must pay the shop's own accounts.
+  const local = ensName.slice(0, -`.${parentName()}`.length);
+  if (local.includes(".")) {
+    const shopName = `${local.slice(local.indexOf(".") + 1)}.${parentName()}`;
+    let shop;
+    try {
+      shop = await resolveMerchant(shopName);
+    } catch (err) {
+      throw new UntrustedPayeeError(`Refused: could not read ${shopName}, the shop selling ${ensName} (${(err as Error).message.split("\n")[0]}).`, "lookup-failed");
+    }
+    if (shop.status === "suspended") throw new UntrustedPayeeError(`Refused: ${shopName}, which sells ${ensName}, is suspended.`, "suspended");
+    if (shop.status !== "verified") throw new UntrustedPayeeError(`Refused: ${shopName}, which sells ${ensName}, has not been verified by Sangam.`, "unverified");
+    const wcDiffers = !!record.whitechainPayTo && record.whitechainPayTo.toLowerCase() !== (shop.whitechainPayTo ?? "").toLowerCase();
+    if (shop.hederaPayTo !== record.hederaPayTo || wcDiffers) {
+      throw new UntrustedPayeeError(`Refused: ${ensName} pays somewhere other than its shop ${shopName}.`, "payto-mismatch");
+    }
+  }
+
   // Each rail has its own payout record: Hedera's sangam.payTo + sangam.network,
   // Whitechain's sangam.payTo.whitechain.
   if (invoice.network === WHITECHAIN_NETWORK) {

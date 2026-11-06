@@ -71,6 +71,8 @@ export type Settlement = {
   } | null;
   /** Set when the payment bought an order on ONDC. */
   ondc?: OndcOrderInfo | null;
+  /** Set when the payment bought one product from the merchant's storefront (its own ENS name). */
+  product?: { ensName: string; title: string } | null;
   status: SettlementStatus;
   error: string | null;
   createdAt: string;
@@ -90,6 +92,8 @@ export type SettlementNotice = {
   source?: "x402" | "transfer";
   /** Which chain hederaTxId is on. Inferred from its format when missing. */
   rail?: Rail;
+  /** The storefront product bought, when the sale was one product. */
+  product?: { ensName: string; title: string };
 };
 
 /** The ONDC side of a settlement: which seller, which order, where the rupees go. */
