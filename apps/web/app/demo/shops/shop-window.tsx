@@ -285,7 +285,7 @@ function OutcomeBanner({ outcome }: { outcome: Outcome }) {
         <div className="font-semibold">Paid. The merchant gets rupees on UPI.</div>
         {outcome.hashscan && (
           <a href={outcome.hashscan} target="_blank" rel="noreferrer" className="mt-1 inline-block text-[13px] underline-offset-2 hover:underline">
-            See the USDC transfer on HashScan ↗
+            {outcome.hashscan.includes("whitechain") ? "See the USDT transfer on the Whitechain explorer ↗" : "See the USDC transfer on HashScan ↗"}
           </a>
         )}
       </motion.div>

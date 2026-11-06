@@ -91,7 +91,7 @@ export function UrlBuyCard({
               <>
                 {" · "}
                 <a className="text-accent underline-offset-2 hover:underline" href={msg.href} target="_blank" rel="noreferrer">
-                  HashScan ↗
+                  {msg.href.includes("whitechain") ? "Whitechain explorer" : "HashScan"} ↗
                 </a>
               </>
             )}

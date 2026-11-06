@@ -1,8 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { Settlement } from "@/lib/types";
 import { Tilt3D } from "./space/kit";
-import { hashscanSchedule, hashscanTopic, hashscanTx, isInFlight, isSimTx, shortTx, usdc } from "../dashboard/format";
+import { RAIL_NAME, type Rail, explorerTx, isInFlight, isSimTx, railOf, receiptLink, refundUrl, shortTx, tokenOf, usdc } from "../dashboard/format";
 
 /* Small shared pieces the settlement, merchant and buyer desks all use. */
 
@@ -94,15 +95,17 @@ export function idBadge(attestationId: number): { label: string; cls: string } {
 
 /** The proof column's rows a person cares about: tx, refund, receipt. */
 export function ProofRows({ s }: { s: Settlement }) {
+  const rail = railOf(s);
+  const receipt = receiptLink(s);
   return (
     <>
       <LedgerRow
-        k="Hedera tx"
+        k={`${RAIL_NAME[rail]} tx`}
         v={
           isSimTx(s.hederaTxId) ? (
             <span className="mono text-xs text-muted" title={s.hederaTxId}>simulated</span>
           ) : (
-            <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={hashscanTx(s.hederaTxId)} target="_blank" rel="noreferrer">
+            <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={explorerTx(s.hederaTxId)} target="_blank" rel="noreferrer">
               {shortTx(s.hederaTxId)} ↗
             </a>
           )
@@ -110,20 +113,20 @@ export function ProofRows({ s }: { s: Settlement }) {
       />
       {s.refund && (
         <LedgerRow
-          k="Scheduled refund"
+          k={rail === "whitechain" ? "Refund" : "Scheduled refund"}
           v={
-            <a className="mono text-xs text-warn underline-offset-2 hover:underline" href={hashscanSchedule(s.refund.scheduleId)} target="_blank" rel="noreferrer">
-              {s.refund.scheduleId} · {usdc(s.refund.amountAtomic)} USDC ↗
+            <a className="mono text-xs text-warn underline-offset-2 hover:underline" href={refundUrl(s.refund)} target="_blank" rel="noreferrer">
+              {s.refund.scheduleId || shortTx(s.refund.transactionId)} · {usdc(s.refund.amountAtomic)} {tokenOf(s)} ↗
             </a>
           }
         />
       )}
       <LedgerRow
-        k="HCS receipt"
+        k={rail === "whitechain" ? "On-chain receipt" : "HCS receipt"}
         v={
-          s.hcsSequence !== null && s.hcsTopicId ? (
-            <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={hashscanTopic(s.hcsTopicId)} target="_blank" rel="noreferrer">
-              {s.hcsTopicId} #{s.hcsSequence} ↗
+          receipt ? (
+            <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={receipt.href} target="_blank" rel="noreferrer">
+              {receipt.label} ↗
             </a>
           ) : (
             <span className="mono text-xs text-muted">{s.hcsSequence !== null ? `#${s.hcsSequence}` : "not set"}</span>
@@ -132,4 +135,63 @@ export function ProofRows({ s }: { s: Settlement }) {
       />
     </>
   );
+}
+
+/** A small "Hedera" / "Whitechain" chip for a settlement row. */
+export function RailBadge({ s }: { s: Pick<Settlement, "rail" | "hederaTxId"> }) {
+  const rail = railOf(s);
+  return (
+    <span
+      className={`mono rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${rail === "whitechain" ? "bg-infobg text-info" : "bg-okbg text-ok"}`}
+      title={rail === "whitechain" ? "Paid in USDT on Whitechain" : "Paid in USDC on Hedera"}
+    >
+      {RAIL_NAME[rail]}
+    </span>
+  );
+}
+
+/** Lets the person pick which rail the agent pays on. Remembered in this browser. */
+export function RailToggle({ rail, onChange, rails }: { rail: Rail; onChange: (r: Rail) => void; rails?: Rail[] }) {
+  const options: Rail[] = rails && rails.length > 0 ? rails : ["hedera"];
+  if (options.length < 2) return null;
+  return (
+    <div role="radiogroup" aria-label="Pay on" className="inline-flex items-center gap-1 rounded-full border border-line p-0.5 text-xs">
+      {options.map((r) => (
+        <button
+          key={r}
+          type="button"
+          role="radio"
+          aria-checked={rail === r}
+          onClick={() => onChange(r)}
+          className={`rounded-full px-3 py-1 transition-colors ${rail === r ? "bg-accent text-bg" : "text-muted hover:text-ink"}`}
+        >
+          {RAIL_NAME[r]} · {r === "whitechain" ? "USDT" : "USDC"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const RAIL_KEY = "sangam.rail";
+
+/** The rail the agent pays on, remembered per browser (falls back to Hedera). */
+export function useRail(): [Rail, (r: Rail) => void] {
+  const [rail, setRail] = useState<Rail>("hedera");
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(RAIL_KEY);
+      if (saved === "hedera" || saved === "whitechain") setRail(saved);
+    } catch {
+      /* storage blocked: keep the default */
+    }
+  }, []);
+  const set = (r: Rail) => {
+    setRail(r);
+    try {
+      localStorage.setItem(RAIL_KEY, r);
+    } catch {
+      /* ignore */
+    }
+  };
+  return [rail, set];
 }

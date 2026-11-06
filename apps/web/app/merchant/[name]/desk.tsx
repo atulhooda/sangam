@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import type { EnsView, Me, Settlement } from "@/lib/types";
-import { Card, CardHead, LedgerRow, MockTag, Spinner, StatusPill, idBadge } from "../../components/ui";
+import { Card, CardHead, LedgerRow, MockTag, Spinner, StatusPill, idBadge, RailBadge } from "../../components/ui";
 import { Logo } from "../../components/space/kit";
 import { AccountMenu } from "../../components/account-menu";
 import { ShopSettings } from "./shop-settings";
-import { clock, hashscanTopic, hashscanTx, isSimTx, rupees, timeAgo, usdc } from "../../dashboard/format";
+import { WHITECHAIN_EXPLORER, clock, explorerTx, isSimTx, receiptLink, rupees, timeAgo, usdc } from "../../dashboard/format";
 
 /*
  * The merchant desk: everything this merchant cares about, and nothing else.
@@ -160,17 +160,17 @@ export function MerchantDesk({ name, me: initialMe }: { name: string; me: Me }) 
                         {isSimTx(s.hederaTxId) ? (
                           <MockTag>simulated</MockTag>
                         ) : (
-                          <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={hashscanTx(s.hederaTxId)} target="_blank" rel="noreferrer">
+                          <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={explorerTx(s.hederaTxId)} target="_blank" rel="noreferrer">
                             {s.hederaTxId.slice(0, 14)}… ↗
                           </a>
                         )}
-                        {s.hcsSequence !== null && s.hcsTopicId && (
-                          <a className="mono ml-2 text-xs text-accent underline-offset-2 hover:underline" href={hashscanTopic(s.hcsTopicId)} target="_blank" rel="noreferrer">
-                            HCS #{s.hcsSequence}
+                        {receiptLink(s) && (
+                          <a className="mono ml-2 text-xs text-accent underline-offset-2 hover:underline" href={receiptLink(s)!.href} target="_blank" rel="noreferrer">
+                            {s.receiptTx ? "receipt" : "HCS"} #{s.hcsSequence}
                           </a>
                         )}
                       </td>
-                      <td className="px-5 py-3"><StatusPill s={s} /></td>
+                      <td className="px-5 py-3"><span className="inline-flex items-center gap-1.5"><RailBadge s={s} /><StatusPill s={s} /></span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -207,6 +207,16 @@ export function MerchantDesk({ name, me: initialMe }: { name: string; me: Me }) 
                   )
                 }
               />
+              {me.shop.whitechainDeposit && (
+                <LedgerRow
+                  k="Whitechain (USDT)"
+                  v={
+                    <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={`${WHITECHAIN_EXPLORER}/address/${me.shop.whitechainDeposit}`} target="_blank" rel="noreferrer" title={me.shop.whitechainDeposit}>
+                      {me.shop.whitechainDeposit.slice(0, 10)}…{me.shop.whitechainDeposit.slice(-6)} ↗
+                    </a>
+                  }
+                />
+              )}
               <LedgerRow k="Agents buy at" v={<span className="mono block max-w-[260px] truncate text-[11px]" title={me.shop.publishedUrl ?? ""}>{me.shop.publishedUrl ?? "—"}</span>} />
               {me.shop.ensTxs.map((t) => (
                 <LedgerRow

@@ -31,3 +31,32 @@ export const hashscanSchedule = (scheduleId: string) => `https://hashscan.io/tes
 export const isSimTx = (tx: string) => tx.startsWith("sim-");
 
 export const shortHash = (h: string) => `${h.slice(0, 8)}…${h.slice(-6)}`;
+
+/* ── two rails: Hedera (USDC) and Whitechain (USDT) ── */
+
+export type Rail = "hedera" | "whitechain";
+export const RAIL_NAME: Record<Rail, string> = { hedera: "Hedera", whitechain: "Whitechain" };
+export const WHITECHAIN_EXPLORER = "https://explorer.testnet.whitechain.io";
+
+/** A Whitechain tx hash (0x + 64 hex), as opposed to a Hedera transaction id. */
+export const isWhitechainTx = (tx: string) => /^0x[0-9a-fA-F]{64}$/.test(tx);
+export const railOf = (s: Pick<Settlement, "rail" | "hederaTxId">): Rail => s.rail ?? (isWhitechainTx(s.hederaTxId) ? "whitechain" : "hedera");
+export const tokenOf = (s: Pick<Settlement, "rail" | "hederaTxId">) => (railOf(s) === "whitechain" ? "USDT" : "USDC");
+
+/** Explorer link for a payment on either rail. */
+export const explorerTx = (tx: string) => (isWhitechainTx(tx) ? `${WHITECHAIN_EXPLORER}/tx/${tx}` : hashscanTx(tx));
+export const explorerAddress = (address: string) =>
+  address.startsWith("0x") ? `${WHITECHAIN_EXPLORER}/address/${address}` : `https://hashscan.io/testnet/account/${address}`;
+/** "HashScan" or "Whitechain explorer", for a link's label. */
+export const explorerName = (url?: string | null) => (url && url.includes("whitechain") ? "Whitechain explorer" : "HashScan");
+
+/** Where the settlement's refund can be seen: a Hedera schedule, or a Whitechain transfer. */
+export const refundUrl = (r: NonNullable<Settlement["refund"]>) => (r.rail === "whitechain" || !r.scheduleId ? explorerTx(r.transactionId) : hashscanSchedule(r.scheduleId));
+
+/** Where the settlement's receipt is: an HCS topic message, or a SangamReceipts transaction. */
+export function receiptLink(s: Settlement): { href: string; label: string } | null {
+  if (s.hcsSequence === null) return null;
+  if (s.receiptTx) return { href: explorerTx(s.receiptTx), label: `SangamReceipts #${s.hcsSequence}` };
+  if (s.hcsTopicId) return { href: hashscanTopic(s.hcsTopicId), label: `${s.hcsTopicId} #${s.hcsSequence}` };
+  return null;
+}

@@ -36,6 +36,8 @@ export type Me = {
     priceInrPaise: number;
     endpoint: string | null;
     depositAccountId: string | null;
+    /** The merchant's USDT deposit address on Whitechain, when that rail is on. */
+    whitechainDeposit?: string | null;
     publishedUrl: string | null;
     ensTxs: { step: string; tx: string }[];
     provisionedAt: string | null;

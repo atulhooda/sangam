@@ -221,12 +221,12 @@ function VerdictBanner({ verdict }: { verdict: RunVerdict }) {
   if (verdict.kind === "paid")
     return (
       <motion.div {...anim} className="rounded-xl bg-okbg px-4 py-3 text-sm text-ok ring-1 ring-ok/30" role="status">
-        <span className="font-semibold">Paid.</span> The USDC transfer is on Hedera; the merchant gets rupees on UPI.
+        <span className="font-semibold">Paid.</span> The {verdict.hashscan?.includes("whitechain") ? "USDT transfer is on Whitechain" : "USDC transfer is on Hedera"}; the merchant gets rupees on UPI.
         {verdict.hashscan && (
           <>
             {" · "}
             <a className="underline underline-offset-2" href={verdict.hashscan} target="_blank" rel="noreferrer">
-              HashScan ↗
+              {verdict.hashscan.includes("whitechain") ? "Whitechain explorer" : "HashScan"} ↗
             </a>
           </>
         )}

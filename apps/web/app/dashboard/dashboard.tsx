@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { EnsView, Invoice, Quote, ReceiptChain, Settlement, Stats } from "@/lib/types";
 import { AgentRunOverlay, runPayAsAgent, useAgentRun, type RunOutcome } from "../components/agent-run";
-import { Card, CardHead, LedgerRow, MockTag, Spinner, StatusPill } from "../components/ui";
+import { Card, CardHead, LedgerRow, MockTag, RailBadge, RailToggle, Spinner, StatusPill, useRail } from "../components/ui";
 import { Logo } from "../components/space/kit";
 import { AccountMenu } from "../components/account-menu";
-import { clock, hashscanSchedule, hashscanTopic, hashscanTx, isInFlight, isSimTx, rupees, shortHash, shortId, shortTx, timeAgo, usdc } from "./format";
+import { RAIL_NAME, WHITECHAIN_EXPLORER, clock, explorerName, explorerTx, hashscanTopic, isInFlight, isSimTx, railOf, receiptLink, refundUrl, rupees, shortHash, shortId, shortTx, timeAgo, tokenOf, usdc } from "./format";
 import { UrlBuyCard } from "./url-buy-card";
 
 /* ───────────────────────── data ───────────────────────── */
@@ -323,6 +323,7 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
             ) : (
               <span className="hidden text-xs text-muted sm:inline">Following latest</span>
             )}
+            <RailBadge s={s} />
             <StatusPill s={s} />
           </div>
         }
@@ -374,12 +375,12 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
         <div className="bg-surface px-5 py-4">
           <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Proof</p>
           <LedgerRow
-            k="Hedera tx"
+            k={`${RAIL_NAME[railOf(s)]} tx`}
             v={
               isSimTx(s.hederaTxId) ? (
                 <span className="mono text-xs text-muted" title={s.hederaTxId}>simulated</span>
               ) : (
-                <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={hashscanTx(s.hederaTxId)} target="_blank" rel="noreferrer">
+                <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={explorerTx(s.hederaTxId)} target="_blank" rel="noreferrer">
                   {shortTx(s.hederaTxId)} ↗
                 </a>
               )
@@ -387,21 +388,37 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
           />
           <LedgerRow
             k="On-chain check"
-            v={<span className="text-xs text-muted">{isSimTx(s.hederaTxId) ? "simulated" : s.chainVerified ? "Mirror Node ✓" : s.status === "received" ? "—" : "skipped"}</span>}
+            v={
+              <span className="text-xs text-muted">
+                {isSimTx(s.hederaTxId)
+                  ? "simulated"
+                  : s.chainVerified
+                    ? railOf(s) === "whitechain"
+                      ? "USDT Transfer log ✓"
+                      : "Mirror Node ✓"
+                    : s.status === "received"
+                      ? "—"
+                      : "skipped"}
+              </span>
+            }
           />
-          <LedgerRow k="Payer" v={<span className="mono text-xs">{s.payer ?? "—"}</span>} />
+          <LedgerRow k="Payer" v={<span className="mono text-xs" title={s.payer ?? ""}>{s.payer ? shortTx(s.payer) : "—"}</span>} />
           {s.refund && (
             <LedgerRow
-              k="Scheduled refund"
+              k={railOf(s) === "whitechain" ? "Refund" : "Scheduled refund"}
               v={
                 <a
                   className="mono text-xs text-warn underline-offset-2 hover:underline"
-                  href={hashscanSchedule(s.refund.scheduleId)}
+                  href={refundUrl(s.refund)}
                   target="_blank"
                   rel="noreferrer"
-                  title="USDC back to the payer once the treasury's signature lands"
+                  title={
+                    railOf(s) === "whitechain"
+                      ? "USDT back to the payer, signed by the deposit address, gas paid by Sangam's relayer"
+                      : "USDC back to the payer once the treasury's signature lands"
+                  }
                 >
-                  {s.refund.scheduleId} · {usdc(s.refund.amountAtomic)} USDC ↗
+                  {s.refund.scheduleId || shortTx(s.refund.transactionId)} · {usdc(s.refund.amountAtomic)} {tokenOf(s)} ↗
                 </a>
               }
             />
@@ -418,16 +435,17 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
             </>
           )}
           <LedgerRow
-            k="HCS receipt"
-            v={
-              s.hcsSequence !== null && s.hcsTopicId ? (
-                <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={hashscanTopic(s.hcsTopicId)} target="_blank" rel="noreferrer">
-                  {s.hcsTopicId} #{s.hcsSequence} ↗
+            k={railOf(s) === "whitechain" ? "On-chain receipt" : "HCS receipt"}
+            v={(() => {
+              const r = receiptLink(s);
+              return r ? (
+                <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={r.href} target="_blank" rel="noreferrer">
+                  {r.label} ↗
                 </a>
               ) : (
                 <span className="mono text-xs text-muted">{s.hcsSequence !== null ? `#${s.hcsSequence}` : "not set"}</span>
-              )
-            }
+              );
+            })()}
           />
         </div>
       </div>
@@ -450,6 +468,10 @@ function TryCard({
   const [agentMsg, setAgentMsg] = useState<{ ok: boolean; text: string; href?: string; refused?: boolean } | null>(null);
   const canSim = stats?.actions.simulate ?? false;
   const canPay = stats?.actions.payAsAgent ?? false;
+  const [railPref, setRail] = useRail();
+  // Only offer Whitechain when this server has it on.
+  const rail = stats?.rails?.includes(railPref) ? railPref : "hedera";
+  const token = rail === "whitechain" ? "USDT" : "USDC";
 
   async function send(short: boolean) {
     setBusy(short ? "short" : "ok");
@@ -476,7 +498,8 @@ function TryCard({
           : kind === "hacked"
             ? { title: "Buying from the hacked bakery", target: "bakery.sangam.eth · backend hacked" }
             : { title: "Buying a rail ticket", target: "tickets.sangam.eth" };
-    const requestBody = kind === "ondc" ? { kind, q: "atta", qty: 1 } : kind === "hacked" ? { kind, attack: "overcharge" } : { kind };
+    // ONDC orders are paid to Sangam's Hedera treasury, so they always go over Hedera.
+    const requestBody = kind === "ondc" ? { kind, q: "atta", qty: 1 } : kind === "hacked" ? { kind, attack: "overcharge", rail } : { kind, rail };
     try {
       const { verdict, body: data } = await runPayAsAgent(run, cfg, requestBody, "/api/pay");
       if (verdict.kind === "refused") {
@@ -523,6 +546,12 @@ function TryCard({
     <Card>
       <CardHead title="Send a payment" hint="An agent pays tickets.sangam.eth. Watch it settle." />
       <div className="space-y-2.5 p-5">
+        {(stats?.rails?.length ?? 0) > 1 && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-muted">Agent pays on</span>
+            <RailToggle rail={rail} onChange={setRail} rails={stats?.rails} />
+          </div>
+        )}
         {stats?.budget && (
           <div className="rounded-xl border border-line bg-surface2 px-4 py-3" title="CUSTOMER_TOTAL_BUDGET: the agent's cumulative USDC cap">
             <div className="flex items-baseline justify-between gap-3 text-xs">
@@ -550,7 +579,11 @@ function TryCard({
           <span>
             Pay as agent
             <span className="block text-xs font-normal opacity-80">
-              {canPay ? "Real testnet USDC over x402, no approval step" : "Needs a funded customer account in .env"}
+              {canPay
+                ? rail === "whitechain"
+                  ? "Real testnet USDT on Whitechain over x402: signature only, Sangam pays the gas"
+                  : "Real testnet USDC over x402, no approval step"
+                : "Needs a funded customer account in .env"}
             </span>
           </span>
           {busy === "agent" ? <Spinner className="h-4 w-4" /> : <span aria-hidden>→</span>}
@@ -598,7 +631,7 @@ function TryCard({
               <>
                 {" · "}
                 <a className="text-accent underline-offset-2 hover:underline" href={agentMsg.href} target="_blank" rel="noreferrer">
-                  HashScan ↗
+                  {explorerName(agentMsg.href)} ↗
                 </a>
               </>
             )}
@@ -769,6 +802,35 @@ function MerchantCard({
 
 /* ───────────────────────── receipt chain ───────────────────────── */
 
+/** The Whitechain rail: the receipts contract and its chain tip, read from the chain. */
+function WhitechainCard({ stats }: { stats: Stats | null }) {
+  const wc = stats?.whitechain;
+  if (!wc) return null;
+  const link = (href: string, text: string, title?: string) => (
+    <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={href} target="_blank" rel="noreferrer" title={title}>
+      {text} ↗
+    </a>
+  );
+  return (
+    <Card>
+      <CardHead
+        title="Whitechain rail"
+        hint="USDT on Whitechain Sepolia. Payers sign; Sangam's relayer pays the gas. Receipts are hash-chained in a contract."
+      />
+      <div className="px-5 py-3">
+        <LedgerRow
+          k="Receipts contract"
+          v={wc.receiptsContract ? link(`${WHITECHAIN_EXPLORER}/address/${wc.receiptsContract}?tab=contract`, shortTx(wc.receiptsContract), wc.receiptsContract) : <span className="text-xs text-muted">not deployed</span>}
+        />
+        <LedgerRow k="Receipts" v={<span className="tabular-nums">{wc.receiptsCount ?? "—"}</span>} />
+        <LedgerRow k="Head hash" v={<span className="mono text-[10.5px]" title={wc.receiptsHead ?? ""}>{wc.receiptsHead ? shortHash(wc.receiptsHead) : "—"}</span>} />
+        <LedgerRow k="Relayer (pays gas)" v={link(`${WHITECHAIN_EXPLORER}/address/${wc.relayer}`, shortTx(wc.relayer), wc.relayer)} />
+        {wc.customerAddress && <LedgerRow k="Agent address" v={link(`${WHITECHAIN_EXPLORER}/address/${wc.customerAddress}`, shortTx(wc.customerAddress), wc.customerAddress)} />}
+      </div>
+    </Card>
+  );
+}
+
 function ReceiptChainCard() {
   const [chain, setChain] = useState<ReceiptChain | null>(null);
   useEffect(() => {
@@ -884,7 +946,7 @@ function PaymentsTable({ rows, selectedId, onSelect, now }: { rows: Settlement[]
                         <span className="text-muted">—</span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-5 py-3"><StatusPill s={s} /></td>
+                    <td className="whitespace-nowrap px-5 py-3"><span className="inline-flex items-center gap-1.5"><RailBadge s={s} /><StatusPill s={s} /></span></td>
                   </tr>
                 );
               })}
@@ -972,6 +1034,7 @@ export function Dashboard() {
               }}
             />
             <ReceiptChainCard />
+            <WhitechainCard stats={stats} />
             <InvoiceCard invoice={invoice} />
             <MerchantCard quote={quote} ens={ens} verified={merchantVerified} />
           </div>
