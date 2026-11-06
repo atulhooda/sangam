@@ -27,8 +27,10 @@ export const facilitatorUrl = () => envOr("FACILITATOR_URL", "https://api.testne
 export type SettledPayment = { transaction: string; payer?: string; amount: string; network: string };
 
 /**
- * The merchant's x402 resource server. `onSettled` runs after every payment
- * the facilitator settles successfully (the merchant uses it to notify Sangam).
+ * The merchant's x402 resource server. Note: with @x402/core 2.28 the
+ * resource server registers onAfterSettle hooks but never runs them, so
+ * `onSettled` doesn't fire; paywalls read the PAYMENT-RESPONSE header
+ * themselves (apps/web notifyIfSettled). Kept for when the hook works.
  */
 export function createMerchantServer(onSettled: (p: SettledPayment) => Promise<void> | void): x402ResourceServer {
   const server = new x402ResourceServer(new HTTPFacilitatorClient({ url: facilitatorUrl() })).register(
