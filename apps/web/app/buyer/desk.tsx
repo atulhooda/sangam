@@ -7,7 +7,7 @@ import { Card, CardHead, MockTag, RailBadge, RailToggle, Spinner, StatusPill, id
 import { Logo } from "../components/space/kit";
 import { MetaMaskCard, type MetaMaskView } from "./metamask";
 import { AccountMenu } from "../components/account-menu";
-import { BoloBuyer } from "./bolo-pay";
+import { BoloAgent } from "../components/bolo-agent";
 import { RAIL_NAME, clock, explorerName, explorerTx, settlementTxUrl, isSimTx, railOf, receiptLink, rupees, timeAgo, tokenOf, usdc } from "../dashboard/format";
 
 /*
@@ -376,8 +376,7 @@ export function BuyerDesk({ me }: { me: Me }) {
           )}
         </Card>
 
-        {/* ── bolo: pay by voice ── */}
-        <BoloBuyer />
+        {/* ── bolo: pay by voice — the floating robot is mounted at the desk root ── */}
 
         {/* ── 4. live transactions ── */}
         <Card>
@@ -401,6 +400,7 @@ export function BuyerDesk({ me }: { me: Me }) {
         </Card>
       </main>
       <AgentRunOverlay state={agentRun.state} onClose={agentRun.close} />
+      <BoloAgent role="buyer" />
     </div>
   );
 }

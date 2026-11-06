@@ -6,7 +6,7 @@ import { Card, CardHead, LedgerRow, MockTag, Spinner, StatusPill, idBadge, RailB
 import { Logo } from "../../components/space/kit";
 import { AccountMenu } from "../../components/account-menu";
 import { ShopSettings } from "./shop-settings";
-import { BoloPanel } from "./bolo";
+import { BoloAgent } from "../../components/bolo-agent";
 import { ProductsCard } from "./products";
 import { OwnershipCard } from "./ownership";
 import { clock, explorerTx, settlementTxUrl, isSimTx, receiptLink, rupees, timeAgo, usdc } from "../../dashboard/format";
@@ -104,8 +104,6 @@ export function MerchantDesk({ name, me: initialMe }: { name: string; me: Me }) 
         </div>
 
         {error && <p className="rounded-xl bg-badbg p-4 text-sm text-bad">API unreachable — is the app running?</p>}
-
-        <BoloPanel name={name} />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Card className="p-6">
@@ -291,6 +289,7 @@ export function MerchantDesk({ name, me: initialMe }: { name: string; me: Me }) 
           </Card>
         )}
       </main>
+      <BoloAgent role="merchant" name={name} />
     </div>
   );
 }

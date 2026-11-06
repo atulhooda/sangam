@@ -13,8 +13,8 @@
     "@sangam/hedera": "*",
     "@sangam/og": "*",
     "@sangam/ondc": "*",
-    "@sangam/shared": "*",
     "@sangam/sarvam": "*",
+    "@sangam/shared": "*",
     "@selfxyz/core": "^1.2.0-beta.1",
     "@selfxyz/qrcode": "^1.0.25",
     "@x402/core": "~2.28.0",
@@ -24,6 +24,7 @@
     "next": "^16.4.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "three": "^0.169.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -31,6 +32,7 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "@types/three": "^0.169.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.7.0"
   }
