@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
  * GET /api/bolo/invoice/[id]/status — what the buyer (and Bulbul's voice)
  * reads aloud, without paying. No secrets: amount, who it's for, paid or not.
  */
-export async function GET(_req: NextRequest, ctx: RouteContext<"/api/bolo/invoice/[id]/status">) {
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const invoice = getBoloInvoice(id);
   if (!invoice) return NextResponse.json({ error: "No such invoice." }, { status: 404 });

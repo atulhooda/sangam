@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  * same settlement pipeline (chain check → 0G decision → UPI payout → receipt).
  */
 
-export async function GET(req: NextRequest, ctx: RouteContext<"/api/bolo/invoice/[id]">) {
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const invoice = getBoloInvoice(id);
   if (!invoice) return NextResponse.json({ error: "No such invoice." }, { status: 404 });
