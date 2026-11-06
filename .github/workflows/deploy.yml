@@ -5,10 +5,11 @@
 #   2. deploy  `railway up` the repo to the "web" service, the same command
 #              used by hand, and wait for Railway's build to finish
 #
-# One secret is needed: RAILWAY_TOKEN, a Railway *project* token for the
-# production environment (Railway → project → Settings → Tokens). The app's
-# own settings (.env values) live in Railway's Variables, not in GitHub.
-# Optional repository variable RAILWAY_SERVICE overrides the service name.
+# One secret is needed: RAILWAY_TOKEN, a Railway project token for the
+# production environment (Railway → project → Settings → Tokens); an account
+# token works too. The app's own settings (.env values) live in Railway's
+# Variables, not in GitHub. Optional repository variables RAILWAY_PROJECT_ID,
+# RAILWAY_ENVIRONMENT and RAILWAY_SERVICE override the deploy target.
 
 name: Deploy to Railway
 
@@ -47,17 +48,37 @@ jobs:
       name: production
       url: https://web-production-78c1a7.up.railway.app
     env:
-      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      # Railway's sangam project and its production environment.
+      RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID || 'a1bb0bf7-9164-4c84-a185-f66f88a0fa69' }}
+      RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT || 'production' }}
+      RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'web' }}
+      SECRET_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - name: Check the Railway token is set
-        run: |
-          if [ -z "$RAILWAY_TOKEN" ]; then
-            echo "::error::RAILWAY_TOKEN is not set. Add a Railway project token under Settings → Secrets and variables → Actions."
-            exit 1
-          fi
       - name: Install the Railway CLI
         run: npm install -g @railway/cli@5.71.0
+      - name: Work out the Railway token type
+        # The RAILWAY_TOKEN secret may hold a project token (Project → Settings
+        # → Tokens) or an account/workspace token (Account → Tokens). The CLI
+        # reads them from different variables, so try both and keep the one
+        # Railway accepts. Whitespace pasted along with the token is dropped.
+        run: |
+          token="$(printf %s "$SECRET_TOKEN" | tr -d '[:space:]')"
+          if [ -z "$token" ]; then
+            echo "::error::The RAILWAY_TOKEN secret is empty. Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          if RAILWAY_TOKEN="$token" railway status --json >/dev/null 2>&1; then
+            echo "Using a Railway project token."
+            echo "RAILWAY_TOKEN=$token" >> "$GITHUB_ENV"
+          elif RAILWAY_API_TOKEN="$token" railway whoami >/dev/null 2>&1; then
+            echo "Using a Railway account token."
+            echo "RAILWAY_API_TOKEN=$token" >> "$GITHUB_ENV"
+          else
+            echo "::error::Railway rejected the token as both a project token and an account token. Create a new one in Railway → project sangam → Settings → Tokens (environment: production) and paste it again as RAILWAY_TOKEN."
+            exit 1
+          fi
       - name: Deploy
         # --ci streams the build log and exits non-zero if the build fails.
-        run: railway up --ci --service "${{ vars.RAILWAY_SERVICE || 'web' }}"
+        run: railway up --ci --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_ENVIRONMENT" --service "$RAILWAY_SERVICE"
