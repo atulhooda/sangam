@@ -15,4 +15,11 @@ export const MERCHANT_FIELDS = Object.keys(MERCHANT_TEXT_KEYS) as MerchantField[
  * to stop agents paying it. Agents that only pay verified merchants read this.
  */
 export const STATUS_TEXT_KEY = "sangam.status";
+
+/**
+ * Optional record: the merchant's deposit address on Whitechain (USDT). A
+ * merchant with it accepts both rails; agents check an invoice on Whitechain
+ * against this record the way they check a Hedera invoice against sangam.payTo.
+ */
+export const WHITECHAIN_PAYTO_KEY = "sangam.payTo.whitechain";
 export type MerchantStatus = "verified" | "suspended";

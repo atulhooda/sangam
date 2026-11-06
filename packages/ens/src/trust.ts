@@ -11,8 +11,8 @@ import { resolveMerchant } from "./resolve.ts";
  *   1. it names a <label>.sangam.eth merchant (invoice extra.ensName),
  *   2. that name's ENS record says sangam.status = "verified" (Self proof +
  *      company certificate, written by Sangam at onboarding), and
- *   3. the invoice pays exactly the Hedera account in that ENS record, on the
- *      same network.
+ *   3. the invoice pays exactly the account in that ENS record for its chain:
+ *      sangam.payTo on Hedera, sangam.payTo.whitechain on Whitechain.
  *
  * A scam site has no name, or names a real merchant but asks to be paid
  * somewhere else: either way the agent refuses. ENS is the source of truth,
@@ -62,6 +62,20 @@ export async function assertVerifiedPayee(invoice: InvoiceOption): Promise<Trust
   if (record.status !== "verified") {
     throw new UntrustedPayeeError(`Refused: ${ensName} has not been verified by Sangam (no Self proof and company certificate on record).`, "unverified");
   }
+  // Each rail has its own payout record: Hedera's sangam.payTo + sangam.network,
+  // Whitechain's sangam.payTo.whitechain.
+  if (invoice.network === WHITECHAIN_NETWORK) {
+    if (!record.whitechainPayTo) {
+      throw new UntrustedPayeeError(`Refused: the invoice is on Whitechain, but ${ensName} publishes no Whitechain deposit address (sangam.payTo.whitechain).`, "network-mismatch");
+    }
+    if (record.whitechainPayTo.toLowerCase() !== invoice.payTo.toLowerCase()) {
+      throw new UntrustedPayeeError(
+        `Refused: the invoice asks for payment to ${invoice.payTo}, but ${ensName}'s ENS record says its Whitechain address is ${record.whitechainPayTo}. This looks like an impersonation.`,
+        "payto-mismatch",
+      );
+    }
+    return { ensName, payTo: record.whitechainPayTo, status: record.status };
+  }
   if (record.hederaPayTo !== invoice.payTo) {
     throw new UntrustedPayeeError(
       `Refused: the invoice asks for payment to ${invoice.payTo}, but ${ensName}'s ENS record says ${record.hederaPayTo}. This looks like an impersonation.`,
@@ -73,6 +87,9 @@ export async function assertVerifiedPayee(invoice: InvoiceOption): Promise<Trust
   }
   return { ensName, payTo: record.hederaPayTo, status: record.status };
 }
+
+/** Whitechain Sepolia's CAIP-2 id (kept here so @sangam/ens needs no chain package). */
+const WHITECHAIN_NETWORK = "eip155:1874";
 
 /**
  * Exchange-rate wiggle room for the price check, in basis points (2%). The
@@ -110,8 +127,9 @@ export async function assertFairInvoice(invoice: InvoiceOption): Promise<FairPay
   const ceiling = (ensAtomic * BigInt(10_000 + PRICE_TOLERANCE_BPS)) / 10_000n;
   if (billed > ceiling) {
     const billedInr = usdcAtomicToPaise(billed, rate) / 100;
+    const token = invoice.network === WHITECHAIN_NETWORK ? "USDT" : "USDC";
     throw new UntrustedPayeeError(
-      `Refused: the invoice asks for ${formatUsdc(billed)} USDC (about ₹${billedInr.toFixed(2)}), but ${payee.ensName}'s ENS record says the price is ₹${(record.priceInrPaise / 100).toFixed(2)} (${formatUsdc(ensAtomic)} USDC). The shop's backend is billing more than its published price.`,
+      `Refused: the invoice asks for ${formatUsdc(billed)} ${token} (about ₹${billedInr.toFixed(2)}), but ${payee.ensName}'s ENS record says the price is ₹${(record.priceInrPaise / 100).toFixed(2)} (${formatUsdc(ensAtomic)} ${token}). The shop's backend is billing more than its published price.`,
       "price-mismatch",
     );
   }

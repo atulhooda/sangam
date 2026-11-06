@@ -3,7 +3,7 @@ import path from "node:path";
 import { normalize } from "viem/ens";
 import { DATA_DIR, REPO_ROOT, flag, type MerchantRecord } from "@sangam/shared";
 import { sepoliaClient } from "./client.ts";
-import { MERCHANT_FIELDS, MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY, type MerchantField } from "./records.ts";
+import { MERCHANT_FIELDS, MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY, WHITECHAIN_PAYTO_KEY, type MerchantField } from "./records.ts";
 
 const CACHE_MS = 60_000;
 const g = globalThis as unknown as { __sangamEnsCache?: Map<string, { record: MerchantRecord; at: number }> };
@@ -81,6 +81,7 @@ async function readEnsMerchant(ensName: string): Promise<MerchantRecord> {
   const values: Partial<Record<MerchantField, string>> = {};
 
   let status: string | undefined;
+  let whitechainPayTo: string | undefined;
   await Promise.all([
     ...MERCHANT_FIELDS.map(async (field) => {
       const value = await client.getEnsText({ name, key: MERCHANT_TEXT_KEYS[field] });
@@ -89,13 +90,16 @@ async function readEnsMerchant(ensName: string): Promise<MerchantRecord> {
     client.getEnsText({ name, key: STATUS_TEXT_KEY }).then((v) => {
       if (v) status = v;
     }),
+    client.getEnsText({ name, key: WHITECHAIN_PAYTO_KEY }).then((v) => {
+      if (v) whitechainPayTo = v;
+    }),
   ]);
 
   const missing = MERCHANT_FIELDS.filter((f) => !values[f]);
   if (missing.length > 0) {
     throw new Error(`${ensName} is missing ENS text records: ${missing.map((f) => MERCHANT_TEXT_KEYS[f]).join(", ")}`);
   }
-  return { ...toRecord(ensName, values as Record<MerchantField, string>), ...(status ? { status } : {}) };
+  return { ...toRecord(ensName, values as Record<MerchantField, string>), ...(status ? { status } : {}), ...(whitechainPayTo ? { whitechainPayTo } : {}) };
 }
 
 function readLocalMerchant(ensName: string): MerchantRecord {
@@ -103,8 +107,8 @@ function readLocalMerchant(ensName: string): MerchantRecord {
   const all = JSON.parse(readFileSync(file, "utf8")) as Record<string, Record<MerchantField, string>>;
   const values = all[ensName];
   if (!values) throw new Error(`${ensName} not found in data/merchants.local.json`);
-  const status = (values as Record<string, string>).status;
-  return { ...toRecord(ensName, values), ...(status ? { status } : {}) };
+  const { status, whitechainPayTo } = values as Record<string, string>;
+  return { ...toRecord(ensName, values), ...(status ? { status } : {}), ...(whitechainPayTo ? { whitechainPayTo } : {}) };
 }
 
 function toRecord(ensName: string, v: Record<MerchantField, string | number>): MerchantRecord {
