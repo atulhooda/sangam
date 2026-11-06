@@ -11,6 +11,9 @@ export const injected = (): Eth | undefined => (typeof window !== "undefined" ? 
 export function walletError(err: unknown): string {
   const e = err as { message?: string; code?: number };
   if (e.code === 4001) return "You cancelled it in the wallet.";
+  // A request is already open in the wallet (often a popup hidden behind the browser).
+  if (e.code === -32002 || /already pending/i.test(e.message ?? ""))
+    return "MetaMask is already waiting for you: click the MetaMask (fox) icon in your browser's toolbar and approve the open request.";
   return (e.message ?? "Something went wrong in the wallet.").split("\n")[0]!;
 }
 
