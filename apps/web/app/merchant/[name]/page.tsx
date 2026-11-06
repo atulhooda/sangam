@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { currentUser, homeFor, otherRole, publicMe } from "@/lib/server/session";
+import { currentUser, homeFor, merchantReady, otherRole, publicMe } from "@/lib/server/session";
 import { MerchantDesk } from "./desk";
 
 export const metadata: Metadata = { title: "Merchant desk · Sangam" };
@@ -19,7 +19,7 @@ export default async function MerchantPage({ params }: { params: Promise<{ name:
   const me = await currentUser();
   if (!me) redirect(`/verify?role=merchant&label=${encodeURIComponent(name)}`);
   if (me.session.role !== "merchant") redirect("/buyer?denied=merchant");
-  if (!me.identity.cert || !me.identity.shop) redirect("/merchant/onboarding");
+  if (!merchantReady(me.identity)) redirect("/merchant/onboarding");
   if (me.identity.label.toLowerCase() !== name) redirect(homeFor(me.identity));
   return <MerchantDesk name={me.identity.label} me={publicMe(me.identity, otherRole(me))} />;
 }

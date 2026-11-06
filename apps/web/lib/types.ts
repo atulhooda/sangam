@@ -23,6 +23,8 @@ export type Me = {
   /** 1 = passport, 2 = EU ID card, 3 = Aadhaar. */
   attestationId: number;
   verifiedAt: string;
+  /** Merchants: a password is set, so they can sign in with name + password too. */
+  hasPassword: boolean;
   cert: {
     companyName: string;
     registrationNumber: string;

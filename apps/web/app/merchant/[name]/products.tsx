@@ -13,7 +13,7 @@ import { rupees, usdc } from "../../dashboard/format";
 type Row = { line: number; label?: string; error?: string; input?: { title: string; priceInrPaise: number; description?: string; image?: string } };
 type Job = { state: "running" | "done" | "failed"; done: number; total: number; current: string; log: string[]; txs: { step: string; tx: string }[]; error: string | null };
 type StoreProduct = { label: string; ensName: string; title: string; priceInrPaise: number; priceUsdcAtomic: string; image: string; rails: string[] };
-type View = { merchant: string; job: Job | null; store: { products: StoreProduct[]; errors: string[] } | { error: string } | null };
+type View = { merchant: string; storeUrl?: string; job: Job | null; store: { products: StoreProduct[]; errors: string[] } | { error: string } | null };
 
 const SAMPLE = `name,price_inr,description,image_url
 Chocolate truffle cake,450,"1 kg, eggless",
@@ -87,6 +87,7 @@ export function ProductsCard({ merchant }: { merchant: string }) {
         }
       />
       <div className="space-y-3 p-5">
+        <PublicLink url={view?.storeUrl ?? null} />
         {store && store.products.length > 0 && (
           <ul className="divide-y divide-line rounded-xl border border-line">
             {store.products.map((p) => (
@@ -218,5 +219,31 @@ export function ProductsCard({ merchant }: { merchant: string }) {
         </div>
       </div>
     </Card>
+  );
+}
+
+/** The shop's public menu link, to share anywhere. Also on its ENS name as sangam.store once products are published. */
+function PublicLink({ url }: { url: string | null }) {
+  const [copied, setCopied] = useState(false);
+  if (!url) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface2 px-3 py-2.5">
+      <span className="text-xs text-muted">Your public menu</span>
+      <a href={url} target="_blank" rel="noreferrer" className="mono min-w-0 flex-1 truncate text-xs text-accent underline-offset-2 hover:underline">
+        {url}
+      </a>
+      <button
+        type="button"
+        onClick={() => {
+          void navigator.clipboard?.writeText(url).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          });
+        }}
+        className="rounded-full border border-line px-2.5 py-1 text-[11px] font-medium transition-colors hover:border-accent"
+      >
+        {copied ? "Copied ✓" : "Copy"}
+      </button>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import { MAX_PRODUCTS, parseProductCsv, productJob, startPublish, storefront } from "@/lib/server/products";
+import { MAX_PRODUCTS, parseProductCsv, productJob, startPublish, storeUrl, storefront } from "@/lib/server/products";
 import { currentUser } from "@/lib/server/session";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ export async function GET() {
   if (!me) return Response.json({ error: "Sign in as a merchant first." }, { status: 401 });
   const merchant = me.identity.label;
   const store = me.identity.shop?.provisionedAt ? await storefront(merchant).catch((err: Error) => ({ error: err.message.split("\n")[0] })) : null;
-  return Response.json({ merchant, job: productJob(merchant), store }, { headers: { "cache-control": "no-store" } });
+  return Response.json({ merchant, storeUrl: storeUrl(merchant), job: productJob(merchant), store }, { headers: { "cache-control": "no-store" } });
 }
 
 export async function POST(req: Request) {

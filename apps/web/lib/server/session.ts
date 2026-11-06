@@ -129,10 +129,21 @@ export function otherRole(me: SignedIn): Role | null {
   return other && findIdentity(me.session.sub, other) ? other : null;
 }
 
-/** Where a signed-in person belongs. Merchants without a certificate and shop details go to onboarding first. */
+/** A merchant can sign in with a password: its own, or a demo shop's (set in the environment). */
+export const hasPassword = (identity: VerifiedIdentity) => !!identity.password || identity.nullifier.startsWith("demo:");
+
+/**
+ * Merchant onboarding is Self proof → claim a name (published on ENS) → set a
+ * password. Until all three are done, a merchant's home is onboarding.
+ */
+export function merchantReady(identity: VerifiedIdentity): boolean {
+  return !!identity.label && !!identity.shop?.provisionedAt && hasPassword(identity);
+}
+
+/** Where a signed-in person belongs. */
 export function homeFor(identity: VerifiedIdentity): string {
   if (identity.role === "user") return "/buyer";
-  if (!identity.cert || !identity.shop) return "/merchant/onboarding";
+  if (!merchantReady(identity)) return "/merchant/onboarding";
   return `/merchant/${encodeURIComponent(identity.label)}`;
 }
 
@@ -144,6 +155,7 @@ export function publicMe(identity: VerifiedIdentity, switchTo: Role | null = nul
     name: identity.disclosed.name ?? null,
     attestationId: identity.attestationId,
     verifiedAt: identity.verifiedAt,
+    hasPassword: hasPassword(identity),
     cert: identity.cert
       ? { companyName: identity.cert.companyName, registrationNumber: identity.cert.registrationNumber, fileName: identity.cert.fileName, uploadedAt: identity.cert.uploadedAt, status: identity.cert.status }
       : null,

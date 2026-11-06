@@ -1,18 +1,19 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-import { demoLoginsEnabled } from "@/lib/server/demo-logins";
 import { DemoHeader } from "../../demo/shops/demo-header";
 import { LoginForm } from "./login-form";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Demo merchant sign-in · Sangam" };
+export const metadata: Metadata = { title: "Merchant sign-in · Sangam" };
 
-/** DEMO ONLY: username/password sign-in for Sangam's demo merchants. Real merchants use Self at /verify. */
+/**
+ * Merchant sign-in with shop name + password: for merchants who proved who
+ * they are with Self, claimed a name and set a password (and for Sangam's demo
+ * shops). Signing in with Self again works too, from /verify.
+ */
 export default function MerchantLogin() {
-  if (!demoLoginsEnabled()) notFound();
   return (
     <div className="min-h-screen">
-      <DemoHeader title="Demo merchant sign-in" />
+      <DemoHeader title="Merchant sign-in" />
       <main id="main" className="mx-auto max-w-md px-5 pb-20 pt-14">
         <LoginForm />
       </main>

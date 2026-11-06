@@ -272,9 +272,6 @@ export function MerchantDesk({ name, me: initialMe }: { name: string; me: Me }) 
               />
               <LedgerRow k="Uploaded" v={<span className="text-xs">{timeAgo(me.cert.uploadedAt, Date.now())}</span>} />
             </div>
-            <p className="px-5 pb-4 text-xs text-muted">
-              Wrong file or details? <a className="text-accent underline-offset-2 hover:underline" href="/merchant/onboarding?replace=1">Update them</a>.
-            </p>
           </Card>
         )}
 

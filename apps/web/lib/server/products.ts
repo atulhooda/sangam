@@ -20,6 +20,9 @@ export const productBuyUrl = (merchant: string, label: string) =>
 
 export { parseProductCsv, type ParsedRow } from "../products-csv";
 
+/** The shop's public storefront (its menu), shareable and written to its ENS name. */
+export const storeUrl = (merchant: string) => `${sangamApiUrl().replace(/\/+$/, "")}/store/${encodeURIComponent(merchant)}`;
+
 /* ── publishing jobs ── */
 
 export type PublishJob = {
@@ -59,6 +62,7 @@ export function startPublish(merchant: string, products: ProductInput[]): Publis
   jobs.set(merchant, job);
   void publishProducts(merchant, products, {
     buyUrl: (p) => productBuyUrl(merchant, p.label),
+    storeUrl: storeUrl(merchant),
     log: (m) => job.log.push(m),
     onProgress: (done, total, current) => Object.assign(job, { done, total, current }),
   })

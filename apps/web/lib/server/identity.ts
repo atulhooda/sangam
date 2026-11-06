@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DATA_DIR } from "@sangam/shared";
+import type { PasswordHash } from "./passwords";
 
 const FILE = path.join(DATA_DIR, "identities.local.json");
 
@@ -72,8 +73,13 @@ export type VerifiedIdentity = {
   /** Self nullifier: one per person per scope. With role, the row's key. */
   nullifier: string;
   role: Role;
-  /** What the person named themselves on the desk: a merchant's ENS name, or a user label. */
+  /**
+   * A merchant's ENS name (<label>.sangam.eth), empty until the merchant claims
+   * one after its Self proof. Unused for buyers.
+   */
   label: string;
+  /** Merchants: set after claiming the name, for name + password sign-in. */
+  password?: PasswordHash;
   /** Self-generated user identifier (a UUID the desk page assigned). */
   userId: string;
   /** 1 = passport, 2 = EU ID card, 3 = Aadhaar. */
@@ -137,10 +143,15 @@ export class LabelTakenError extends Error {}
  * Re-verifying refreshes the disclosures and keeps the certificate.
  */
 export async function upsertIdentity(
-  identity: Omit<VerifiedIdentity, "verifiedAt" | "updatedAt" | "cert" | "shop" | "wallet">,
+  identity: Omit<VerifiedIdentity, "verifiedAt" | "updatedAt" | "cert" | "shop" | "wallet" | "password">,
 ): Promise<VerifiedIdentity> {
   return withLock((items) => {
-    if (identity.role === "merchant") {
+    // Signing in again with Self (no name given) keeps the name already claimed.
+    if (identity.role === "merchant" && !identity.label) {
+      const mine = items.find((i) => i.nullifier === identity.nullifier && i.role === "merchant");
+      identity = { ...identity, label: mine?.label ?? "" };
+    }
+    if (identity.role === "merchant" && identity.label) {
       const owner = items.find((i) => i.role === "merchant" && i.label.toLowerCase() === identity.label.toLowerCase());
       if (owner && owner.nullifier !== identity.nullifier) {
         throw new LabelTakenError(`${identity.label} is already registered to another merchant`);
@@ -161,6 +172,37 @@ export async function upsertIdentity(
     const row: VerifiedIdentity = { ...identity, verifiedAt: now, updatedAt: now };
     items.push(row);
     return row;
+  });
+}
+
+/** The merchant who owns a name (bakery or bakery.sangam.eth), if any. */
+export function findMerchantByLabel(ensName: string): VerifiedIdentity | undefined {
+  const name = ensName.trim().toLowerCase();
+  return readAll().find((i) => i.role === "merchant" && i.label.toLowerCase() === name);
+}
+
+/** Give a verified merchant its name. First come, first served; a merchant keeps the name it claimed. */
+export async function claimMerchantLabel(nullifier: string, ensName: string): Promise<VerifiedIdentity> {
+  return withLock((items) => {
+    const row = items.find((i) => i.nullifier === nullifier && i.role === "merchant");
+    if (!row) throw new Error("no merchant identity for this session");
+    const name = ensName.toLowerCase();
+    if (row.label && row.label !== name && row.shop?.provisionedAt) throw new Error(`You already own ${row.label}.`);
+    const owner = items.find((i) => i.role === "merchant" && i.label.toLowerCase() === name && i.nullifier !== nullifier);
+    if (owner) throw new LabelTakenError(`${name} was just claimed by another merchant. Pick another.`);
+    row.label = name;
+    row.updatedAt = new Date().toISOString();
+    return { ...row };
+  });
+}
+
+export async function setMerchantPassword(nullifier: string, password: PasswordHash): Promise<VerifiedIdentity> {
+  return withLock((items) => {
+    const row = items.find((i) => i.nullifier === nullifier && i.role === "merchant");
+    if (!row) throw new Error("no merchant identity for this session");
+    row.password = password;
+    row.updatedAt = new Date().toISOString();
+    return { ...row };
   });
 }
 
@@ -212,6 +254,6 @@ export function listDepositAccounts(): { ensName: string; accountId: string }[] 
 /** Merchants anyone may see: the ENS name and badge only, no personal data. */
 export function listPublicMerchants() {
   return readAll()
-    .filter((i) => i.role === "merchant")
+    .filter((i) => i.role === "merchant" && i.label)
     .map((i) => ({ role: i.role, label: i.label, attestationId: i.attestationId, certified: !!i.cert, onEns: !!i.shop?.provisionedAt }));
 }

@@ -6,8 +6,8 @@ import { findIdentity, updateMerchantShop, type VerifiedIdentity } from "./ident
 import { merchantEnsName, sangamApiUrl } from "./merchant";
 
 /*
- * Merchant onboarding, the part Sangam does for the merchant once its Self
- * proof and company certificate are in:
+ * Merchant onboarding, the part Sangam does for the merchant once it has
+ * proved who it is with Self and claimed its name:
  *
  *   1. a Hedera deposit account of its own (created once, reused on retries)
  *   2. <label>.sangam.eth on ENSv2 Sepolia, with sangam.payTo = that account,
@@ -42,7 +42,8 @@ export async function provisionMerchant(nullifier: string): Promise<VerifiedIden
   running.add(nullifier);
   try {
     let identity = findIdentity(nullifier, "merchant");
-    if (!identity?.cert || !identity.shop) throw new Error("Upload the company certificate and shop details first.");
+    if (!identity?.label) throw new Error("Claim your shop name first.");
+    if (!identity.shop?.upiHandle) throw new Error("Add the UPI handle your payouts go to first.");
     const suffix = `.${parentName()}`;
     if (!identity.label.endsWith(suffix)) throw new Error(`${identity.label} is not under ${parentName()}`);
     const label = identity.label.slice(0, -suffix.length);

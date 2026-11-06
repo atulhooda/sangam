@@ -24,11 +24,12 @@ export async function POST(req: Request) {
     const suffix = `.${parentName()}`;
     const raw = (body.label ?? "").trim().toLowerCase();
     const short = raw.endsWith(suffix) ? raw.slice(0, -suffix.length) : raw;
-    if (!validLabel(short)) {
+    // New merchants claim a name after the proof (onboarding); an empty one is fine here.
+    if (short && !validLabel(short)) {
       return Response.json({ error: "Pick a shop name: 3–63 lowercase letters, digits or hyphens, e.g. riya-sweets" }, { status: 400 });
     }
-    if (RESERVED(short)) return Response.json({ error: `${short}${suffix} is reserved for Sangam.` }, { status: 400 });
-    label = `${short}${suffix}`;
+    if (short && RESERVED(short)) return Response.json({ error: `${short}${suffix} is reserved for Sangam.` }, { status: 400 });
+    label = short ? `${short}${suffix}` : "";
   }
 
   const { userId, secret } = startLogin(role, label);

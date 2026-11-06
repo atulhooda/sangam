@@ -28,19 +28,11 @@ import { SELF_SCOPE, selfEndpoint, selfMock } from "@/lib/self-config";
  */
 
 type Role = "merchant" | "user";
-type Step = "login" | "role" | "details" | "scan";
+type Step = "login" | "role" | "scan";
 type Claim = { status: "pending" } | { status: "signed-in"; redirect: string } | { status: "error" | "expired"; reason: string };
 
 export default function VerifyPage() {
   const [me, setMe] = useState<Me | null | undefined>(undefined); // undefined = checking
-  // Demo merchants (railway shop, bakery) can sign in with a password when DEMO_MERCHANT_LOGINS is set.
-  const [demoLogins, setDemoLogins] = useState(false);
-  useEffect(() => {
-    fetch("/api/auth/demo-login", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d: { enabled?: boolean }) => setDemoLogins(!!d.enabled))
-      .catch(() => undefined);
-  }, []);
   const [step, setStep] = useState<Step>("login");
   const [role, setRole] = useState<Role>("user");
   const [label, setLabel] = useState("");
@@ -62,7 +54,8 @@ export default function VerifyPage() {
     const r = q.get("role");
     if (r === "merchant" || r === "user") setRole(r);
     if (q.get("label")) setLabel(q.get("label")!);
-    if (r === "merchant") setNotice("Sign in as the merchant to open that desk.");
+    if (r === "merchant" && q.get("new")) setNotice("New merchant: verify with Self, then claim your shop name.");
+    else if (r === "merchant") setNotice("Sign in as the merchant to open that desk.");
     else if (r === "user") setNotice("Sign in as a buyer to open the buyer desk.");
   }, []);
 
@@ -133,8 +126,7 @@ export default function VerifyPage() {
 
   const choose = (r: Role) => {
     setRole(r);
-    if (r === "merchant") setStep("details");
-    else void begin("user", "");
+    void begin(r, "");
   };
 
   return (
@@ -180,7 +172,7 @@ export default function VerifyPage() {
                   className="mt-4 inline-block w-full rounded-full bg-accent px-6 py-3 font-medium text-white transition-opacity hover:opacity-90 dark:text-[#0b0d1a]"
                   href={me.home}
                 >
-                  {me.role === "merchant" ? (me.cert ? "Go to my merchant desk →" : "Finish merchant onboarding →") : "Go to my buyer desk →"}
+                  {me.role === "merchant" ? (me.home.startsWith("/merchant/onboarding") ? "Finish merchant onboarding →" : "Go to my merchant desk →") : "Go to my buyer desk →"}
                 </a>
                 {me.switchTo ? (
                   <p className="mt-3 text-xs text-muted">
@@ -188,7 +180,7 @@ export default function VerifyPage() {
                   </p>
                 ) : (
                   <button
-                    onClick={() => (me.role === "merchant" ? choose("user") : setStep("details"))}
+                    onClick={() => (me.role === "merchant" ? choose("user") : choose("merchant"))}
                     className="mt-3 text-xs text-accent underline-offset-2 hover:underline"
                   >
                     Also use Sangam as a {me.role === "merchant" ? "buyer" : "merchant"} (one more Self scan, then switch any time) →
@@ -197,15 +189,15 @@ export default function VerifyPage() {
               </div>
             ) : (
               <button
-                onClick={() => setStep(notice ? (role === "merchant" ? "details" : "role") : "role")}
+                onClick={() => (notice && role === "merchant" ? choose("merchant") : setStep("role"))}
                 className="mt-8 w-full rounded-full bg-accent px-6 py-4 font-medium text-white transition-opacity hover:opacity-90 dark:text-[#0b0d1a]"
               >
                 Continue with Self →
               </button>
             )}
-            {demoLogins && !me && (
+            {!me && (
               <a href="/merchant/login" className="mt-4 block text-sm text-accent underline-offset-2 hover:underline">
-                Demo merchant? Sign in with a username and password →
+                Merchant with a password? Sign in with your shop name →
               </a>
             )}
             <p className="mt-6 text-xs text-muted">
@@ -224,7 +216,7 @@ export default function VerifyPage() {
               <button onClick={() => choose("merchant")} className="group rounded-2xl border border-line bg-surface p-6 text-left transition-colors hover:border-accent">
                 <span aria-hidden className="text-3xl">🏪</span>
                 <p className="mt-3 text-lg font-semibold">I'm a merchant</p>
-                <p className="mt-1 text-sm text-muted">Agents pay me in USDC, I get rupees over UPI. Self proof + a company certificate.</p>
+                <p className="mt-1 text-sm text-muted">Agents pay me in stablecoins, I get rupees over UPI. Verify with Self, then claim my shop name on ENS.</p>
                 <p className="mt-3 text-xs font-medium text-accent opacity-0 transition-opacity group-hover:opacity-100">Continue →</p>
               </button>
               <button onClick={() => choose("user")} disabled={starting} className="group rounded-2xl border border-line bg-surface p-6 text-left transition-colors hover:border-accent disabled:opacity-60">
@@ -241,66 +233,14 @@ export default function VerifyPage() {
           </div>
         )}
 
-        {/* ── screen 3: merchant name ── */}
-        {step === "details" && (
-          <form
-            className="mx-auto max-w-md space-y-5 py-6 sm:py-10"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void begin("merchant", label);
-            }}
-          >
-            <div className="text-center">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Merchant · step 1 of 2</p>
-              <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Pick your shop name</h1>
-              <p className="mt-2 text-sm text-muted">
-                Sangam publishes it on ENS as <span className="mono text-ink">{(label.trim().toLowerCase().replace(/\.sangam\.eth$/, "") || "yourshop")}.sangam.eth</span> once your
-                certificate is in. First to prove it with Self gets it; no one else can claim it after.
-              </p>
-            </div>
-            <Card>
-              <div className="px-5 py-4">
-                <label className="block">
-                  <span className="text-xs text-muted">Shop name</span>
-                  <div className="mt-1 flex items-center rounded-full border border-white/10 bg-white/[0.05]2 focus-within:border-accent">
-                    <input
-                      required
-                      autoFocus
-                      value={label.replace(/\.sangam\.eth$/, "")}
-                      onChange={(e) => setLabel(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-                      className="mono min-w-0 flex-1 rounded-l-lg bg-transparent px-3 py-2 text-sm outline-none"
-                      placeholder="riya-sweets"
-                      maxLength={63}
-                    />
-                    <span className="mono shrink-0 pr-3 text-sm text-muted">.sangam.eth</span>
-                  </div>
-                </label>
-              </div>
-            </Card>
-            {failed && <p className="rounded-lg bg-badbg p-3 text-sm text-bad" role="alert">{failed}</p>}
-            <button
-              type="submit"
-              disabled={starting}
-              className="w-full rounded-full bg-accent px-6 py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0b0d1a]"
-            >
-              {starting ? "Starting…" : "Continue to the Self scan →"}
-            </button>
-            <p className="text-center">
-              <button type="button" onClick={() => setStep("role")} className="text-sm text-muted underline-offset-2 hover:text-ink hover:underline">
-                ← I'm not a merchant
-              </button>
-            </p>
-          </form>
-        )}
-
         {/* ── screen 4: the Self QR ── */}
         {step === "scan" && (
           <div className="mx-auto max-w-md space-y-5 py-2 sm:py-6">
             <div className="text-center">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">{role === "merchant" ? "Merchant · step 1 of 2" : "Buyer · last step"}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">{role === "merchant" ? "Merchant · step 1 of 3" : "Buyer · last step"}</p>
               <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Scan with the Self app</h1>
               <p className="mt-2 text-sm text-muted">
-                {role === "merchant" ? <>Proving you run <span className="mono text-ink">{label.trim().toLowerCase().replace(/\.sangam\.eth$/, "")}.sangam.eth</span>. </> : null}
+                {role === "merchant" ? <>Proving who runs the shop. Next you claim its name. </> : null}
                 Aadhaar in India, a passport anywhere else.
               </p>
             </div>
@@ -344,7 +284,7 @@ export default function VerifyPage() {
                 onClick={() => {
                   setFailed(null);
                   setSelfApp(null);
-                  setStep(role === "merchant" ? "details" : "role");
+                  setStep("role");
                 }}
                 className="text-sm text-muted underline-offset-2 hover:text-ink hover:underline"
               >

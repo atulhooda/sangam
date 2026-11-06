@@ -32,6 +32,8 @@ export const PRODUCT_TEXT_KEYS = {
 
 /** On the merchant's name: comma-separated product labels, in shop order. */
 export const PRODUCTS_TEXT_KEY = "sangam.products";
+/** On the merchant's name: the public link to its storefront (its menu). */
+export const STORE_TEXT_KEY = "sangam.store";
 
 export type ProductInput = {
   /** Display name, e.g. "Chocolate truffle cake". */
@@ -117,7 +119,13 @@ function merchantLabel(merchantName: string): string {
 export async function publishProducts(
   merchantName: string,
   products: ProductInput[],
-  opts: { buyUrl: (product: { label: string; ensName: string }) => string; log?: Log; onProgress?: (done: number, total: number, current: string) => void },
+  opts: {
+    buyUrl: (product: { label: string; ensName: string }) => string;
+    /** The shop's public storefront, written to the shop's name as sangam.store. */
+    storeUrl?: string;
+    log?: Log;
+    onProgress?: (done: number, total: number, current: string) => void;
+  },
 ): Promise<{ products: Product[]; registry: Hex; txs: ProductTx[] }> {
   const log = opts.log ?? (() => undefined);
   const name = normalize(merchantName);
@@ -175,6 +183,9 @@ export async function publishProducts(
   for (let i = 0; i < rows.length; i += 12) batches.push(rows.slice(i, i + 12).flatMap(recordCalls));
   if (batches.length === 0) batches.push([]);
   batches[batches.length - 1]!.push(listCall);
+  if (opts.storeUrl) {
+    batches[batches.length - 1]!.push(encodeFunctionData({ abi: RESOLVER_ABI, functionName: "setText", args: [dns(name), STORE_TEXT_KEY, opts.storeUrl] }));
+  }
   for (const [i, calls] of batches.entries()) {
     log(`writing records ${i + 1}/${batches.length}…`);
     const tx = await wallet.writeContract({ address: resolver, abi: RESOLVER_ABI, functionName: "multicall", args: [calls] });
