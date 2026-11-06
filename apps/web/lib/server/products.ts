@@ -141,10 +141,34 @@ export type Storefront = {
 
 const storeCache = new Map<string, { at: number; value: Storefront }>();
 
-/** The merchant's storefront, rebuilt from ENS (product list on the merchant's name, then each product's records). */
+const STORE_FRESH_MS = 30_000;
+/** A storefront this old is still shown at once, while a fresh copy is read from ENS in the background. */
+const STORE_STALE_MS = 15 * 60_000;
+const storeRefreshing = new Set<string>();
+
+/**
+ * The merchant's storefront. Served from memory when fresh; when stale, the
+ * old copy is served instantly and refreshed from ENS in the background, so
+ * only the very first visit ever waits on Sepolia reads.
+ */
 export async function storefront(merchant: string): Promise<Storefront> {
   const hit = storeCache.get(merchant);
-  if (hit && Date.now() - hit.at < 30_000) return hit.value;
+  const age = hit ? Date.now() - hit.at : Infinity;
+  if (hit && age < STORE_FRESH_MS) return hit.value;
+  if (hit && age < STORE_STALE_MS) {
+    if (!storeRefreshing.has(merchant)) {
+      storeRefreshing.add(merchant);
+      void readStorefront(merchant)
+        .catch((err: Error) => console.error(`[store] refresh ${merchant}: ${err.message}`))
+        .finally(() => storeRefreshing.delete(merchant));
+    }
+    return hit.value;
+  }
+  return readStorefront(merchant);
+}
+
+/** Rebuild a storefront from ENS (product list on the merchant's name, then each product's records). */
+async function readStorefront(merchant: string): Promise<Storefront> {
   const record = await resolveMerchant(merchant);
   const labels = await readProductList(merchant);
   const rate = await inrPerUsd();
