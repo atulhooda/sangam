@@ -20,7 +20,7 @@ export type MerchantRecord = {
 
 export type SettlementStatus = "received" | "confirmed" | "decided" | "paid" | "held" | "failed";
 
-export type PayoutMode = "mock" | "razorpayx-test";
+export type PayoutMode = "mock" | "razorpayx-test" | "cashfree-sandbox" | "cashfree";
 
 /** Which chain a payment settled on: Hedera (x402), or Sepolia (the buyer's own wallet). Missing on older rows: Hedera. */
 export type Rail = "hedera" | "sepolia";
@@ -47,6 +47,8 @@ export type Settlement = {
   ogVerified: boolean | null;
   payoutRef: string | null;
   payoutMode: PayoutMode | null;
+  /** Sandbox payouts (Cashfree) go to a test UPI ID standing in for the merchant's: the one actually paid. */
+  payoutTo?: string | null;
   hcsSequence: number | null;
   /** Set when the payment was checked on the Mirror Node (false: check skipped). */
   chainVerified?: boolean;

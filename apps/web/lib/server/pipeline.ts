@@ -156,7 +156,7 @@ export async function runPipeline(start: Settlement): Promise<void> {
         { merchant: s.merchant, vpa: merchant.upiHandle, paise: payoutPaise, reference: s.id },
         { forceMock: simulated },
       );
-      s = await updateSettlement(s.id, { status: "paid", payoutRef: result.ref, payoutMode: result.mode });
+      s = await updateSettlement(s.id, { status: "paid", payoutRef: result.ref, payoutMode: result.mode, payoutTo: result.paidTo ?? merchant.upiHandle });
     } else {
       s = await updateSettlement(s.id, { status: "held" });
       if (!simulated && rail === "sepolia" && payer && payTo.toLowerCase() === depositAddress(s.merchant).toLowerCase()) {

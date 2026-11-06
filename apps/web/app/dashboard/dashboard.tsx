@@ -418,6 +418,18 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
             />
           )}
           <LedgerRow k="UPI payout ref" v={<span className="mono text-xs" title={s.payoutRef ?? ""}>{s.payoutRef ?? "—"}</span>} />
+          {s.payoutMode && s.payoutMode !== "mock" && (
+            <LedgerRow
+              k="Paid out via"
+              v={
+                <span className="text-xs">
+                  {s.payoutMode === "cashfree-sandbox" ? "Cashfree sandbox" : s.payoutMode === "cashfree" ? "Cashfree" : "RazorpayX test"}
+                  {s.payoutTo && <span className="mono text-muted"> → {s.payoutTo}</span>}
+                  {s.payoutMode === "cashfree-sandbox" && <span className="text-muted"> (Cashfree&apos;s test UPI, standing in for the merchant&apos;s)</span>}
+                </span>
+              }
+            />
+          )}
           {s.ondc && (
             <>
               <LedgerRow k="ONDC order" v={<span className="mono text-xs" title={s.ondc.transactionId}>{s.ondc.orderId} · {s.ondc.state}</span>} />
