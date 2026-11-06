@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { constants, publicEncrypt, randomUUID } from "node:crypto";
 import { env, envOr } from "./config.ts";
 import type { PayoutMode } from "./types.ts";
 
@@ -66,12 +66,29 @@ const cashfreeSandbox = () => envOr("CASHFREE_ENV", "sandbox") !== "production";
 /** Cashfree's sandbox only pays its test UPI IDs (success@upi / failure@upi); real IDs fail there. */
 const SANDBOX_VPA = () => envOr("CASHFREE_SANDBOX_VPA", "success@upi");
 
+/**
+ * Cashfree only accepts payout calls from whitelisted IPs, or with a
+ * signature from its 2FA public key (Developers → Two-Factor Authentication →
+ * Public Key). Railway has no fixed IP, so Sangam signs: RSA-OAEP encrypt
+ * "<clientId>.<unix seconds>" with that key, base64, as X-Cf-Signature.
+ */
+function cashfreeSignature(clientId: string): string | null {
+  const raw = process.env.CASHFREE_PUBLIC_KEY?.trim();
+  if (!raw) return null;
+  const pem = raw.includes("BEGIN") ? raw.replace(/\\n/g, "\n") : `-----BEGIN PUBLIC KEY-----\n${raw.replace(/\s+/g, "")}\n-----END PUBLIC KEY-----`;
+  const plain = Buffer.from(`${clientId}.${Math.floor(Date.now() / 1000)}`);
+  return publicEncrypt({ key: pem, padding: constants.RSA_PKCS1_OAEP_PADDING }, plain).toString("base64");
+}
+
 function cashfreeHeaders(): Record<string, string> {
+  const clientId = env("CASHFREE_CLIENT_ID");
+  const signature = cashfreeSignature(clientId);
   return {
-    "x-client-id": env("CASHFREE_CLIENT_ID"),
+    "x-client-id": clientId,
     "x-client-secret": env("CASHFREE_CLIENT_SECRET"),
     "x-api-version": envOr("CASHFREE_API_VERSION", "2024-01-01"),
     "content-type": "application/json",
+    ...(signature ? { "x-cf-signature": signature } : {}),
   };
 }
 
