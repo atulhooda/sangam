@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { EnsView, Invoice, Quote, ReceiptChain, Settlement, Stats } from "@/lib/types";
+import { AgentRunOverlay, runPayAsAgent, useAgentRun, type RunOutcome } from "../components/agent-run";
 import { Card, CardHead, LedgerRow, MockTag, Spinner, StatusPill } from "../components/ui";
 import { Logo } from "../components/space/kit";
 import { AccountMenu } from "../components/account-menu";
 import { clock, hashscanSchedule, hashscanTopic, hashscanTx, isInFlight, isSimTx, rupees, shortHash, shortId, shortTx, timeAgo, usdc } from "./format";
+import { UrlBuyCard } from "./url-buy-card";
 
 /* ───────────────────────── data ───────────────────────── */
 
@@ -435,8 +437,16 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
 
 /* ───────────────────────── side cards ───────────────────────── */
 
-function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void }) {
-  const [busy, setBusy] = useState<"ok" | "short" | "agent" | "ondc" | "scam" | null>(null);
+function TryCard({
+  stats,
+  run,
+  onSent,
+}: {
+  stats: Stats | null;
+  run: (cfg: { title: string; target: string }, doFetch: () => Promise<RunOutcome>) => Promise<RunOutcome>;
+  onSent: () => void;
+}) {
+  const [busy, setBusy] = useState<"ok" | "short" | "agent" | "ondc" | "scam" | "hacked" | null>(null);
   const [agentMsg, setAgentMsg] = useState<{ ok: boolean; text: string; href?: string; refused?: boolean } | null>(null);
   const canSim = stats?.actions.simulate ?? false;
   const canPay = stats?.actions.payAsAgent ?? false;
@@ -455,42 +465,52 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
     }
   }
 
-  async function payAsAgent(kind: "ticket" | "ondc" | "scam") {
-    setBusy(kind === "ondc" ? "ondc" : kind === "scam" ? "scam" : "agent");
+  async function payAsAgent(kind: "ticket" | "ondc" | "scam" | "hacked") {
+    setBusy(kind === "ondc" ? "ondc" : kind === "scam" ? "scam" : kind === "hacked" ? "hacked" : "agent");
     setAgentMsg(null);
+    const cfg =
+      kind === "ondc"
+        ? { title: "Buying on ONDC as agent", target: "ONDC gateway · atta" }
+        : kind === "scam"
+          ? { title: "Buying from a fake IRCTC site", target: "impersonates tickets.sangam.eth" }
+          : kind === "hacked"
+            ? { title: "Buying from the hacked bakery", target: "bakery.sangam.eth · backend hacked" }
+            : { title: "Buying a rail ticket", target: "tickets.sangam.eth" };
+    const requestBody = kind === "ondc" ? { kind, q: "atta", qty: 1 } : kind === "hacked" ? { kind, attack: "overcharge" } : { kind };
     try {
-      const res = await fetch("/api/pay", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(kind === "ondc" ? { kind, q: "atta", qty: 1 } : { kind }),
-      });
-      const body = (await res.json()) as {
-        refused?: boolean;
-        error?: string;
-        hederaTxId?: string;
-        hashscan?: string;
-        bought?: string;
-        ticket?: { pnr: string };
-        result?: { ondc?: { orderId: string; state: string } };
-      };
-      if (body.refused) {
+      const { verdict, body: data } = await runPayAsAgent(run, cfg, requestBody, "/api/pay");
+      if (verdict.kind === "refused") {
         // The agent's verified-merchants-only check stopped the payment: the right outcome.
-        setAgentMsg({ ok: true, refused: true, text: `🛡️ Agent refused to pay, nothing was signed. ${body.error ?? ""}` });
+        setAgentMsg({ ok: true, refused: true, text: `🛡️ Agent refused to pay, nothing was signed. ${verdict.message}` });
         return;
       }
       if (kind === "scam") {
-        setAgentMsg({ ok: false, text: body.error ?? `The scam site was not refused (${res.status})` });
+        setAgentMsg({
+          ok: false,
+          text:
+            verdict.kind === "soft"
+              ? verdict.message
+              : verdict.kind === "error"
+                ? `The scam site was not refused (${verdict.message})`
+                : "The scam site was not refused — the agent paid it.",
+        });
         return;
       }
-      if (!res.ok || !body.hederaTxId) {
-        setAgentMsg({ ok: false, text: body.error ?? `Failed (${res.status})` });
+      if (verdict.kind === "soft") {
+        setAgentMsg({ ok: false, text: verdict.message });
         return;
       }
+      if (verdict.kind !== "paid") {
+        setAgentMsg({ ok: false, text: verdict.message });
+        return;
+      }
+      const ticket = data?.ticket as { pnr?: string } | undefined;
+      const ondc = data?.result as { ondc?: { orderId: string; state: string } } | undefined;
       const detail =
         kind === "ondc"
-          ? `${body.bought} · ONDC order ${body.result?.ondc?.orderId ?? "—"} (${body.result?.ondc?.state ?? "?"})`
-          : `PNR ${body.ticket?.pnr ?? "—"}`;
-      setAgentMsg({ ok: true, text: `Paid ${shortTx(body.hederaTxId)} · ${detail}`, href: body.hashscan });
+          ? `${String(data?.bought ?? "order")} · ONDC order ${ondc?.ondc?.orderId ?? "—"} (${ondc?.ondc?.state ?? "?"})`
+          : `PNR ${ticket?.pnr ?? "—"}`;
+      setAgentMsg({ ok: true, text: `Paid ${shortTx(String(data?.hederaTxId ?? ""))} · ${detail}`, href: verdict.hashscan });
       onSent();
     } catch (err) {
       setAgentMsg({ ok: false, text: (err as Error).message });
@@ -558,6 +578,18 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
             <span className="block text-xs font-normal text-muted">Impersonates tickets.sangam.eth: the agent should refuse</span>
           </span>
           {busy === "scam" ? <Spinner className="h-4 w-4" /> : <span aria-hidden className="text-muted">🛡️</span>}
+        </button>
+        <button
+          onClick={() => payAsAgent("hacked")}
+          disabled={busy !== null || !canPay}
+          title="The demo bakery's backend bills 10× the price in its ENS record: the agent should refuse"
+          className="flex w-full items-center justify-between rounded-xl border border-bad/40 bg-surface px-4 py-3 text-left font-medium transition-colors hover:border-bad disabled:opacity-60"
+        >
+          <span>
+            Buy from the hacked bakery
+            <span className="block text-xs font-normal text-muted">Its backend bills 10× its ENS price: the agent should refuse</span>
+          </span>
+          {busy === "hacked" ? <Spinner className="h-4 w-4" /> : <span aria-hidden className="text-muted">🛡️</span>}
         </button>
         {agentMsg && (
           <p className={`rounded-lg p-3 text-xs ${agentMsg.refused ? "bg-okbg text-ok" : agentMsg.ok ? "bg-surface2 text-muted" : "bg-badbg text-bad"}`} role="status">
@@ -869,6 +901,7 @@ function PaymentsTable({ rows, selectedId, onSelect, now }: { rows: Settlement[]
 export function Dashboard() {
   const { settlements, stats, quote, ens, invoice, lastOk, error, refresh } = useDashboardData();
   const now = useNow();
+  const agentRun = useAgentRun();
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [merchantVerified, setMerchantVerified] = useState(false);
 
@@ -924,8 +957,17 @@ export function Dashboard() {
           <div className="row-start-2 grid min-w-0 grid-cols-1 gap-5 md:grid-cols-2 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:grid-cols-1">
             <TryCard
               stats={stats}
+              run={agentRun.run}
               onSent={() => {
                 setPinnedId(null); // follow the newest payment, which is this one
+                refresh();
+              }}
+            />
+            <UrlBuyCard
+              stats={stats}
+              run={agentRun.run}
+              onSent={() => {
+                setPinnedId(null);
                 refresh();
               }}
             />
@@ -935,6 +977,7 @@ export function Dashboard() {
           </div>
         </div>
       </main>
+      <AgentRunOverlay state={agentRun.state} onClose={agentRun.close} />
     </div>
   );
 }

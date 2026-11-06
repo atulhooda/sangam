@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Me, Settlement } from "@/lib/types";
+import { AgentRunOverlay, runPayAsAgent, useAgentRun } from "../components/agent-run";
 import { Card, CardHead, MockTag, Spinner, StatusPill, idBadge } from "../components/ui";
 import { Logo } from "../components/space/kit";
 import { AccountMenu } from "../components/account-menu";
@@ -50,6 +51,7 @@ type RunLine = { ensName: string; state: "queued" | "paying" | "paid" | "refused
 const hashscanAccount = (id: string) => `https://hashscan.io/testnet/account/${id}`;
 
 export function BuyerDesk({ me }: { me: Me }) {
+  const agentRun = useAgentRun();
   const [wallet, setWallet] = useState<WalletView | null>(null);
   const [merchants, setMerchants] = useState<Merchant[] | null>(null);
   const [settlements, setSettlements] = useState<Settlement[] | null>(null);
@@ -140,15 +142,20 @@ export function BuyerDesk({ me }: { me: Me }) {
     const set = (ensName: string, line: Omit<RunLine, "ensName">) => setRun((rs) => rs.map((r) => (r.ensName === ensName ? { ensName, ...line } : r)));
     for (const ensName of names) {
       set(ensName, { state: "paying", text: "checking ENS, reading the 402 invoice, signing USDC…" });
-      try {
-        const res = await fetch("/api/agent/buy", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ensName }) });
-        const body = (await res.json()) as { refused?: boolean; error?: string; hederaTxId?: string; hashscan?: string; priceAtomic?: string; payTo?: string };
-        if (body.refused) set(ensName, { state: "refused", text: `🛡️ refused, nothing signed: ${body.error}` });
-        else if (!res.ok || !body.hederaTxId) set(ensName, { state: "failed", text: body.error ?? `failed (${res.status})` });
-        else set(ensName, { state: "paid", text: `paid ${usdc(body.priceAtomic ?? "0", 2)} USDC → ${body.payTo ?? "merchant"} · ${body.hederaTxId}`, href: body.hashscan });
-      } catch (err) {
-        set(ensName, { state: "failed", text: (err as Error).message });
-      }
+      const { verdict, body } = await runPayAsAgent(
+        agentRun.run,
+        { title: "Buying as your agent", target: ensName },
+        { ensName },
+        "/api/agent/buy",
+      );
+      if (verdict.kind === "refused") set(ensName, { state: "refused", text: `🛡️ refused, nothing signed: ${verdict.message}` });
+      else if (verdict.kind === "paid")
+        set(ensName, {
+          state: "paid",
+          text: `paid ${usdc(String(body?.priceAtomic ?? "0"), 2)} USDC → ${String(body?.payTo ?? "merchant")} · ${String(body?.hederaTxId ?? "")}`,
+          href: verdict.hashscan,
+        });
+      else set(ensName, { state: "failed", text: verdict.message });
       await loadWallet();
     }
     setRunning(false);
@@ -377,6 +384,7 @@ export function BuyerDesk({ me }: { me: Me }) {
           )}
         </Card>
       </main>
+      <AgentRunOverlay state={agentRun.state} onClose={agentRun.close} />
     </div>
   );
 }

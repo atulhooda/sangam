@@ -30,6 +30,7 @@ export class UntrustedPayeeError extends Error {
       | "payto-mismatch"
       | "network-mismatch"
       | "price-mismatch"
+      | "origin-mismatch"
       | "lookup-failed",
   ) {
     super(message);
