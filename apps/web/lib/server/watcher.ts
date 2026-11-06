@@ -57,10 +57,16 @@ async function mirror<T>(pathAndQuery: string): Promise<T> {
 }
 
 /** Just before the account existed, as a Mirror Node timestamp. */
-async function createdAt(accountId: string): Promise<string> {
+/** How far back a first scan of an account looks. */
+const FIRST_SCAN_LOOKBACK_S = 10 * 60;
+
+/** Where a first scan starts: a few minutes ago, or the account's creation if that's later. */
+async function startFor(accountId: string): Promise<string> {
   const a = await mirror<{ created_timestamp: string }>(`/api/v1/accounts/${accountId}`);
   const [s, ns = "0"] = a.created_timestamp.split(".");
-  return `${Number(s) - 1}.${ns}`;
+  const created = Number(s) - 1;
+  const recent = Math.floor(Date.now() / 1000) - FIRST_SCAN_LOOKBACK_S;
+  return created > recent ? `${created}.${ns}` : `${recent}.000000000`;
 }
 
 /** Oldest-first transactions touching the account after `since`, following empty pages' next links. */
@@ -92,9 +98,12 @@ export async function watchDeposits(): Promise<WatchResult> {
 
     for (const { ensName, accountId } of accounts) {
       try {
-        // Start at the account's creation: an ascending scan from timestamp 0
-        // makes the Mirror Node return empty pages (with a "next" link) for ages.
-        const since = cursors[accountId] ?? (await createdAt(accountId));
+        // No cursor yet (a new account, or a fresh server with an empty data
+        // volume): start a few minutes back, never at the account's creation.
+        // Replaying an existing account's history would book old payments as
+        // new ones (and refund or pay them out again). A brand-new account has
+        // no history anyway, so starting at its creation adds nothing.
+        const since = cursors[accountId] ?? (await startFor(accountId));
         const transactions = await transactionsSince(accountId, since);
 
         for (const tx of transactions) {
@@ -150,7 +159,7 @@ const SEPOLIA_GRACE_BLOCKS = 3n;
 async function watchSepolia(cursors: Record<string, string>, result: WatchResult) {
   const byAddress = new Map(knownMerchantNames().map((n) => [depositAddress(n).toLowerCase(), n]));
   const latest = (await sepoliaBlockNumber()) - SEPOLIA_GRACE_BLOCKS;
-  const from = cursors["sepolia:block"] ? BigInt(cursors["sepolia:block"]) + 1n : latest - 200n;
+  const from = cursors["sepolia:block"] ? BigInt(cursors["sepolia:block"]) + 1n : latest - 50n; // first scan: ~10 minutes back, never history
   if (from > latest) return;
   const to = from + 1_000n < latest ? from + 1_000n : latest;
   for (const log of await transfersTo([...byAddress.keys()] as Hex[], from, to)) {
