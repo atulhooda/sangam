@@ -2,16 +2,21 @@
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
 /*
- * Bolo, as a little robot. Pure three.js (no react-three-fiber) so it stays a
- * single self-contained canvas we can mount anywhere and drive from props.
+ * Bolo, as the three.js "RobotExpressive" character
+ * (threejs.org/examples/#webgl_animation_skinning_morph). A fully-rigged robot
+ * with built-in animations (Idle, Wave, Dance, Yes, No, ThumbsUp) and face
+ * morphs (Surprised, Angry, Sad) that we map onto the voice phases:
  *
- * The head and antenna are real 3D (lit); the FACE is a 2D canvas painted every
- * frame and used as an unlit "screen" texture on the visor — that's what lets
- * the eyes blink, the mouth turn into a live waveform while Bolo speaks, and a
- * listening ring pulse with the mic. Everything recolours per phase and reads
- * the app's own CSS theme tokens, so it matches light and dark.
+ *   idle → Idle · connecting → Wave · speaking → periodic Yes/Wave gestures
+ *   listening → Surprised · working → Dance · ended → ThumbsUp · error → No+Angry
+ *
+ * Drag on it to spin it (with inertia); a quick tap triggers onTap. A
+ * phase-coloured light washes over it and pulses with the live voice/mic level,
+ * reading the app's own CSS theme tokens so it matches light and dark.
  */
 
 export type RobotState =
@@ -28,12 +33,11 @@ export type Levels = { bolo: number; mic: number };
 
 type Props = {
   state: RobotState;
-  /** Live loudness of Bolo's voice and the mic, 0..1, read every frame. */
   getLevels?: () => Levels;
+  onTap?: () => void;
   size?: number;
 };
 
-/** Read a --color-* token off :root and return [r,g,b] in 0..1, with a fallback. */
 function cssColor(name: string, fallback: string): THREE.Color {
   try {
     const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -43,265 +47,195 @@ function cssColor(name: string, fallback: string): THREE.Color {
   }
 }
 
-export default function BoloRobot({ state, getLevels, size = 150 }: Props) {
+const BASE: Record<RobotState, string> = {
+  idle: "Idle",
+  connecting: "Idle",
+  speaking: "Idle",
+  listening: "Idle",
+  thinking: "Idle",
+  working: "Dance",
+  ended: "Idle",
+  error: "Idle",
+};
+const ENTER_EMOTE: Partial<Record<RobotState, string>> = { connecting: "Wave", ended: "ThumbsUp", error: "No" };
+const EXPRESSION: Partial<Record<RobotState, string>> = { listening: "Surprised", error: "Angry", thinking: "Sad" };
+
+export default function BoloRobot({ state, getLevels, onTap, size = 170 }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
-  // Latest props the render loop reads without re-subscribing.
   const stateRef = useRef<RobotState>(state);
   const levelsRef = useRef<() => Levels>(getLevels ?? (() => ({ bolo: 0, mic: 0 })));
+  const tapRef = useRef<(() => void) | undefined>(onTap);
   stateRef.current = state;
   levelsRef.current = getLevels ?? (() => ({ bolo: 0, mic: 0 }));
+  tapRef.current = onTap;
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
+    let disposed = false;
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(dpr);
     renderer.setSize(size, size);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
     mount.appendChild(renderer.domElement);
+    renderer.domElement.style.cursor = "grab";
+    renderer.domElement.style.touchAction = "none";
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
-    camera.position.set(0, 0.15, 6.2);
-    camera.lookAt(0, 0.1, 0);
+    camera.position.set(0, 1.2, 7);
 
-    // ── theme palette (re-read on theme change) ──
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const envRT = pmrem.fromScene(new RoomEnvironment(), 0.03);
+    scene.environment = envRT.texture;
+
     const theme = {
       accent: cssColor("--color-accent", "#a5b4fc"),
       warn: cssColor("--color-warn", "#f0c062"),
       ok: cssColor("--color-ok", "#6fd3a0"),
       bad: cssColor("--color-bad", "#f08a80"),
-      shell: cssColor("--color-surface2", "#11132a"),
-      ink: cssColor("--color-ink", "#e6e9f5"),
     };
     const readTheme = () => {
       theme.accent = cssColor("--color-accent", "#a5b4fc");
       theme.warn = cssColor("--color-warn", "#f0c062");
       theme.ok = cssColor("--color-ok", "#6fd3a0");
       theme.bad = cssColor("--color-bad", "#f08a80");
-      theme.shell = cssColor("--color-surface2", "#11132a");
-      theme.ink = cssColor("--color-ink", "#e6e9f5");
     };
     const themeObs = new MutationObserver(readTheme);
     themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme", "style"] });
-
-    // accent colour for the current phase
     const phaseColor = (): THREE.Color =>
-      stateRef.current === "speaking"
-        ? theme.warn
-        : stateRef.current === "ended"
-          ? theme.ok
-          : stateRef.current === "error"
-            ? theme.bad
-            : theme.accent;
+      stateRef.current === "speaking" ? theme.warn
+        : stateRef.current === "ended" ? theme.ok
+        : stateRef.current === "error" ? theme.bad
+        : theme.accent;
 
-    // ── lights ──
-    scene.add(new THREE.AmbientLight(0xffffff, 1.1));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.75));
     const key = new THREE.DirectionalLight(0xffffff, 2.2);
-    key.position.set(2.5, 4, 5);
+    key.position.set(3, 6, 4);
     scene.add(key);
-    const rim = new THREE.DirectionalLight(theme.accent.clone().getHex(), 1.4);
-    rim.position.set(-3, 1, -2);
-    scene.add(rim);
-    const glowLight = new THREE.PointLight(theme.accent.clone().getHex(), 6, 10, 2);
-    glowLight.position.set(0, 1.9, 0.6);
-    scene.add(glowLight);
+    const phaseLight = new THREE.PointLight(phaseColor().getHex(), 6, 14, 2);
+    phaseLight.position.set(0, 2, 3);
+    scene.add(phaseLight);
 
-    // ── the robot ──
+    // pivot we spin; the model is centred inside it
     const bot = new THREE.Group();
     scene.add(bot);
 
-    const shellMat = new THREE.MeshStandardMaterial({ color: theme.shell.clone(), metalness: 0.55, roughness: 0.35 });
-    const trimMat = new THREE.MeshStandardMaterial({ color: theme.ink.clone().multiplyScalar(0.5), metalness: 0.7, roughness: 0.3 });
+    let mixer: THREE.AnimationMixer | null = null;
+    const actions = new Map<string, THREE.AnimationAction>();
+    let currentBase: THREE.AnimationAction | null = null;
+    let emoting = false;
+    let face: THREE.Mesh | null = null;
+    let exprTarget: string | null = null;
+    let prevState: RobotState | null = null;
+    let gestureClock = 0;
 
-    // head
-    const head = new THREE.Group();
-    head.position.y = 0.55;
-    bot.add(head);
-    const headGeo = new THREE.SphereGeometry(1.15, 48, 48);
-    headGeo.scale(1.08, 0.92, 0.95);
-    const headMesh = new THREE.Mesh(headGeo, shellMat);
-    head.add(headMesh);
-
-    // ears
-    const earGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.18, 24);
-    const earL = new THREE.Mesh(earGeo, trimMat);
-    earL.rotation.z = Math.PI / 2;
-    earL.position.set(-1.18, 0, 0);
-    head.add(earL);
-    const earR = earL.clone();
-    earR.position.x = 1.18;
-    head.add(earR);
-    const earGlowMat = new THREE.MeshBasicMaterial({ color: phaseColor().clone() });
-    const earDotGeo = new THREE.CircleGeometry(0.13, 24);
-    const earDotL = new THREE.Mesh(earDotGeo, earGlowMat);
-    earDotL.position.set(-1.28, 0, 0);
-    earDotL.rotation.y = -Math.PI / 2;
-    head.add(earDotL);
-    const earDotR = new THREE.Mesh(earDotGeo, earGlowMat);
-    earDotR.position.set(1.28, 0, 0);
-    earDotR.rotation.y = Math.PI / 2;
-    head.add(earDotR);
-
-    // antenna
-    const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.7, 16), trimMat);
-    stalk.position.y = 1.2;
-    head.add(stalk);
-    const tipMat = new THREE.MeshBasicMaterial({ color: phaseColor().clone() });
-    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.17, 24, 24), tipMat);
-    tip.position.y = 1.62;
-    head.add(tip);
-
-    // ── face: a 2D canvas used as an unlit screen texture ──
-    const FACE = 256;
-    const faceCanvas = document.createElement("canvas");
-    faceCanvas.width = FACE;
-    faceCanvas.height = FACE;
-    const fx = faceCanvas.getContext("2d")!;
-    const faceTex = new THREE.CanvasTexture(faceCanvas);
-    faceTex.colorSpace = THREE.SRGBColorSpace;
-    const visorGeo = new THREE.PlaneGeometry(1.55, 1.1);
-    const visorMat = new THREE.MeshBasicMaterial({ map: faceTex, transparent: true });
-    const visor = new THREE.Mesh(visorGeo, visorMat);
-    visor.position.set(0, 0.02, 0.92);
-    head.add(visor);
-
-    const hex = (c: THREE.Color) => `#${c.getHexString()}`;
-    const rr = (x: number, y: number, w: number, h: number, r: number) => {
-      fx.beginPath();
-      fx.moveTo(x + r, y);
-      fx.arcTo(x + w, y, x + w, y + h, r);
-      fx.arcTo(x + w, y + h, x, y + h, r);
-      fx.arcTo(x, y + h, x, y, r);
-      fx.arcTo(x, y, x + w, y, r);
-      fx.closePath();
+    const fadeToBase = (name: string) => {
+      const next = actions.get(name);
+      if (!next || next === currentBase) return;
+      next.reset().fadeIn(0.3).play();
+      if (currentBase) currentBase.fadeOut(0.3);
+      currentBase = next;
+    };
+    const playEmote = (name: string) => {
+      const a = actions.get(name);
+      if (!a || !mixer) return;
+      emoting = true;
+      a.reset();
+      a.setLoop(THREE.LoopOnce, 1);
+      a.clampWhenFinished = true;
+      a.fadeIn(0.2).play();
+      if (currentBase) currentBase.fadeOut(0.2);
     };
 
-    // blink timing
-    let nextBlink = 1.5 + Math.random() * 3;
-    let blink = 0; // 0 open .. 1 shut
+    const loader = new GLTFLoader();
+    loader.load(
+      "/models/RobotExpressive/RobotExpressive.glb",
+      (gltf) => {
+        if (disposed) return;
+        const model = gltf.scene;
+        // centre + ground, then fit the camera
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        const sphere = box.getBoundingSphere(new THREE.Sphere());
+        model.position.sub(center);
+        bot.add(model);
+        const dist = (sphere.radius / Math.sin((camera.fov * Math.PI) / 180 / 2)) * 1.05;
+        camera.position.set(0, sphere.radius * 0.15, dist);
+        camera.lookAt(0, 0, 0);
 
-    function drawFace(t: number, dt: number, level: Levels) {
-      const s = stateRef.current;
-      const col = hex(phaseColor());
-      fx.clearRect(0, 0, FACE, FACE);
-      // visor background
-      fx.fillStyle = "rgba(6,7,16,0.92)";
-      rr(14, 30, FACE - 28, FACE - 86, 46);
-      fx.fill();
-      fx.strokeStyle = col;
-      fx.globalAlpha = 0.35;
-      fx.lineWidth = 3;
-      fx.stroke();
-      fx.globalAlpha = 1;
+        model.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (m.morphTargetDictionary && "Surprised" in m.morphTargetDictionary) face = m;
+        });
 
-      fx.save();
-      fx.shadowColor = col;
-      fx.shadowBlur = 22;
-      fx.fillStyle = col;
-      fx.strokeStyle = col;
+        mixer = new THREE.AnimationMixer(model);
+        gltf.animations.forEach((clip) => actions.set(clip.name, mixer!.clipAction(clip)));
+        mixer.addEventListener("finished", () => {
+          emoting = false;
+          if (currentBase) currentBase.reset().fadeIn(0.25).play();
+        });
+        fadeToBase(BASE[stateRef.current]);
+        currentBase?.play();
+      },
+      undefined,
+      () => {
+        /* model failed to load — the canvas just stays empty */
+      },
+    );
 
-      const cx = FACE / 2;
-      const eyeY = 108;
+    // ── drag to rotate (+ tap detection + inertia) ──
+    let dragging = false;
+    let moved = 0;
+    let lastX = 0;
+    let downT = 0;
+    let velY = 0;
+    let idleSpin = true;
+    let lastInteract = -999;
 
-      if (s === "error") {
-        // ✕ eyes
-        fx.lineWidth = 9;
-        fx.lineCap = "round";
-        for (const ex of [cx - 44, cx + 44]) {
-          fx.beginPath();
-          fx.moveTo(ex - 15, eyeY - 15);
-          fx.lineTo(ex + 15, eyeY + 15);
-          fx.moveTo(ex + 15, eyeY - 15);
-          fx.lineTo(ex - 15, eyeY + 15);
-          fx.stroke();
-        }
-        fx.lineWidth = 7;
-        fx.beginPath();
-        fx.moveTo(cx - 26, 182);
-        fx.lineTo(cx + 26, 182);
-        fx.stroke();
-        fx.restore();
-        faceTex.needsUpdate = true;
-        return;
-      }
-
-      // eyes (blink): advance blink clock
-      nextBlink -= dt;
-      if (blink === 0 && nextBlink <= 0) blink = 0.0001;
-      if (blink > 0) {
-        blink += dt * 9;
-        if (blink >= 2) {
-          blink = 0;
-          nextBlink = 1.8 + Math.random() * 3.5;
-        }
-      }
-      const open = 1 - (blink > 1 ? 2 - blink : blink); // 1→0→1
-      // look direction: up when thinking
-      const lookY = s === "thinking" ? -14 : 0;
-      const eh = Math.max(2, 30 * open);
-      for (const ex of [cx - 44, cx + 44]) {
-        rr(ex - 14, eyeY - eh / 2 + lookY, 28, eh, Math.min(14, eh / 2));
-        fx.fill();
-      }
-
-      // mouth / activity
-      if (s === "speaking") {
-        const n = 7;
-        const amp = 0.25 + level.bolo * 0.75;
-        for (let i = 0; i < n; i++) {
-          const bx = cx - (n - 1) * 9 + i * 18;
-          const phase = t * 11 + i * 0.9;
-          const h = 8 + Math.abs(Math.sin(phase)) * 46 * amp;
-          rr(bx - 5, 182 - h / 2, 10, h, 5);
-          fx.fill();
-        }
-      } else if (s === "listening") {
-        const pr = 10 + level.mic * 26 + Math.sin(t * 4) * 3;
-        fx.globalAlpha = 0.9;
-        fx.lineWidth = 5;
-        fx.beginPath();
-        fx.arc(cx, 184, pr, 0, Math.PI * 2);
-        fx.stroke();
-        fx.globalAlpha = 0.5;
-        fx.beginPath();
-        fx.arc(cx, 184, pr + 10, 0, Math.PI * 2);
-        fx.stroke();
-        fx.globalAlpha = 1;
-      } else if (s === "thinking" || s === "connecting" || s === "working") {
-        for (let i = 0; i < 3; i++) {
-          const a = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t * 5 - i * 0.9));
-          fx.globalAlpha = a;
-          fx.beginPath();
-          fx.arc(cx - 26 + i * 26, 184, 7, 0, Math.PI * 2);
-          fx.fill();
-        }
-        fx.globalAlpha = 1;
-      } else {
-        // idle / ended: soft smile
-        fx.lineWidth = 7;
-        fx.lineCap = "round";
-        fx.beginPath();
-        fx.arc(cx, 168, 26, 0.15 * Math.PI, 0.85 * Math.PI);
-        fx.stroke();
-      }
-      fx.restore();
-      faceTex.needsUpdate = true;
-    }
-
-    // ── pointer follow (subtle) ──
-    const target = { x: 0, y: 0 };
-    const onMove = (e: PointerEvent) => {
-      target.x = (e.clientX / window.innerWidth) * 2 - 1;
-      target.y = (e.clientY / window.innerHeight) * 2 - 1;
+    const el = renderer.domElement;
+    const onDown = (e: PointerEvent) => {
+      dragging = true;
+      moved = 0;
+      lastX = e.clientX;
+      downT = performance.now();
+      idleSpin = false;
+      el.setPointerCapture(e.pointerId);
+      el.style.cursor = "grabbing";
     };
-    window.addEventListener("pointermove", onMove);
+    const onMoveEl = (e: PointerEvent) => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX;
+      lastX = e.clientX;
+      moved += Math.abs(dx);
+      bot.rotation.y += dx * 0.012;
+      velY = dx * 0.012;
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!dragging) return;
+      dragging = false;
+      el.style.cursor = "grab";
+      try {
+        el.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      lastInteract = performance.now() / 1000;
+      if (moved < 6 && performance.now() - downT < 350) {
+        velY = 0;
+        tapRef.current?.();
+      }
+    };
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMoveEl);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
 
-    // ── animation loop ──
     const clock = new THREE.Clock();
     let raf = 0;
-    const tmp = new THREE.Color();
 
     const loop = () => {
       raf = requestAnimationFrame(loop);
@@ -309,58 +243,85 @@ export default function BoloRobot({ state, getLevels, size = 150 }: Props) {
       const t = clock.elapsedTime;
       const s = stateRef.current;
       const level = levelsRef.current();
+      mixer?.update(dt);
 
-      // body bob + breathing
-      const busy = s === "connecting" || s === "working";
-      const speed = busy ? 3.2 : 1.4;
-      bot.position.y = Math.sin(t * speed) * (busy ? 0.08 : 0.05);
-      bot.scale.setScalar(1 + Math.sin(t * speed * 2) * 0.012);
+      // phase transitions
+      if (s !== prevState) {
+        if (!emoting) fadeToBase(BASE[s]);
+        const emote = ENTER_EMOTE[s];
+        if (emote) playEmote(emote);
+        exprTarget = EXPRESSION[s] ?? null;
+        gestureClock = 0;
+        prevState = s;
+      }
 
-      // head: follow pointer, lean in when listening, nod when speaking
-      const leanX = s === "listening" ? 0.12 : 0;
-      const nod = s === "speaking" ? Math.sin(t * 9) * 0.05 * (0.4 + level.bolo) : 0;
-      head.rotation.y += (target.x * 0.5 - head.rotation.y) * 0.06;
-      head.rotation.x += (target.y * 0.3 + leanX + nod - head.rotation.x) * 0.08;
+      // gesture now and then while speaking, so it looks like it's talking
+      if (s === "speaking" && !emoting) {
+        gestureClock += dt;
+        if (gestureClock > 2 + Math.random()) {
+          gestureClock = 0;
+          playEmote(Math.random() < 0.5 ? "Yes" : "Wave");
+        }
+      }
 
-      // antenna sway + spin while busy
-      head.children.forEach(() => {});
-      stalk.rotation.z = Math.sin(t * 2) * 0.08;
-      if (busy) bot.rotation.y += dt * 1.4;
-      else bot.rotation.y += (0 - bot.rotation.y) * 0.05;
+      // face expression blend
+      if (face?.morphTargetInfluences && face.morphTargetDictionary) {
+        const dict = face.morphTargetDictionary;
+        for (const name of ["Surprised", "Angry", "Sad"]) {
+          const idx = dict[name];
+          if (idx === undefined) continue;
+          const want = exprTarget === name ? 1 : 0;
+          face.morphTargetInfluences[idx] += (want - face.morphTargetInfluences[idx]) * 0.15;
+        }
+      }
 
-      // phase colour → antenna tip, ears, rim/glow light
+      // rotation inertia → gentle auto-spin
+      if (!dragging) {
+        bot.rotation.y += velY;
+        velY *= 0.94;
+        const since = t - (lastInteract < 0 ? -999 : lastInteract);
+        if (Math.abs(velY) < 0.0008 && (idleSpin || since > 3)) {
+          idleSpin = true;
+          bot.rotation.y += dt * 0.3;
+        }
+      }
+
+      // phase light: colour + pulse with loudness
       const pc = phaseColor();
-      const pulse =
-        s === "speaking" ? 0.55 + level.bolo * 0.9 : s === "listening" ? 0.5 + level.mic * 0.9 : 0.6 + Math.sin(t * 3) * 0.25;
-      tmp.copy(pc).multiplyScalar(Math.min(1.6, pulse));
-      (tip.material as THREE.MeshBasicMaterial).color.copy(tmp);
-      (earGlowMat as THREE.MeshBasicMaterial).color.copy(tmp);
-      glowLight.color.copy(pc);
-      glowLight.intensity = 3 + pulse * 4;
-      glowLight.position.copy(tip.position).applyMatrix4(head.matrixWorld);
-      rim.color.copy(pc).multiplyScalar(0.6);
+      const beat =
+        s === "speaking" ? 0.6 + level.bolo * 1.8
+          : s === "listening" ? 0.5 + level.mic * 1.6
+          : s === "connecting" || s === "working" ? 0.7 + Math.sin(t * 6) * 0.4
+          : 0.55 + Math.sin(t * 2.2) * 0.25;
+      phaseLight.color.copy(pc);
+      phaseLight.intensity = 3 + beat * 4;
 
-      drawFace(t, dt, level);
       renderer.render(scene, camera);
     };
     loop();
 
     return () => {
+      disposed = true;
       cancelAnimationFrame(raf);
-      window.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMoveEl);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
       themeObs.disconnect();
+      mixer?.stopAllAction();
+      envRT.texture.dispose();
+      pmrem.dispose();
+      scene.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.geometry) m.geometry.dispose();
+        const mat = (m as THREE.Mesh).material;
+        if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
+        else if (mat) (mat as THREE.Material).dispose();
+      });
       renderer.dispose();
-      headGeo.dispose();
-      earGeo.dispose();
-      earDotGeo.dispose();
-      visorGeo.dispose();
-      faceTex.dispose();
-      shellMat.dispose();
-      trimMat.dispose();
-      visorMat.dispose();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
   }, [size]);
 
-  return <div ref={mountRef} style={{ width: size, height: size }} aria-hidden />;
+  return <div ref={mountRef} style={{ width: size, height: size }} />;
 }
