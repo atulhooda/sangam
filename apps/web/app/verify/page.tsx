@@ -33,6 +33,14 @@ type Claim = { status: "pending" } | { status: "signed-in"; redirect: string } |
 
 export default function VerifyPage() {
   const [me, setMe] = useState<Me | null | undefined>(undefined); // undefined = checking
+  // Demo merchants (railway shop, bakery) can sign in with a password when DEMO_MERCHANT_LOGINS is set.
+  const [demoLogins, setDemoLogins] = useState(false);
+  useEffect(() => {
+    fetch("/api/auth/demo-login", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { enabled?: boolean }) => setDemoLogins(!!d.enabled))
+      .catch(() => undefined);
+  }, []);
   const [step, setStep] = useState<Step>("login");
   const [role, setRole] = useState<Role>("user");
   const [label, setLabel] = useState("");
@@ -194,6 +202,11 @@ export default function VerifyPage() {
               >
                 Continue with Self →
               </button>
+            )}
+            {demoLogins && !me && (
+              <a href="/merchant/login" className="mt-4 block text-sm text-accent underline-offset-2 hover:underline">
+                Demo merchant? Sign in with a username and password →
+              </a>
             )}
             <p className="mt-6 text-xs text-muted">
               The proof is verified at <span className="mono">/api/self/verify</span> and only the disclosed fields are stored.
