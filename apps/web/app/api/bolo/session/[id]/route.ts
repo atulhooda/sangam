@@ -5,7 +5,7 @@ import { currentUser } from "@/lib/server/session";
 export const dynamic = "force-dynamic";
 
 /** GET /api/bolo/session/[id] — the panel polls this while/after the call. */
-export async function GET(_req: NextRequest, ctx: RouteContext<"/api/bolo/session/[id]">) {
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const me = await currentUser();
   const { id } = await ctx.params;
   const session = getVoiceSession(id);
