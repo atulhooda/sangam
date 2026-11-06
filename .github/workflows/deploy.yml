@@ -1,0 +1,63 @@
+# Deploy Sangam to Railway on every push to main.
+#
+#   1. check   install from the lockfile and typecheck the whole workspace;
+#              a broken main never reaches Railway
+#   2. deploy  `railway up` the repo to the "web" service, the same command
+#              used by hand, and wait for Railway's build to finish
+#
+# One secret is needed: RAILWAY_TOKEN, a Railway *project* token for the
+# production environment (Railway → project → Settings → Tokens). The app's
+# own settings (.env values) live in Railway's Variables, not in GitHub.
+# Optional repository variable RAILWAY_SERVICE overrides the service name.
+
+name: Deploy to Railway
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time; a newer push waits for the running one instead of
+# cancelling it halfway through a Railway build.
+concurrency:
+  group: railway-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit -p apps/web
+
+  deploy:
+    name: Deploy
+    needs: check
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://web-production-78c1a7.up.railway.app
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the Railway token is set
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::error::RAILWAY_TOKEN is not set. Add a Railway project token under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+      - name: Install the Railway CLI
+        run: npm install -g @railway/cli@5.71.0
+      - name: Deploy
+        # --ci streams the build log and exits non-zero if the build fails.
+        run: railway up --ci --service "${{ vars.RAILWAY_SERVICE || 'web' }}"
