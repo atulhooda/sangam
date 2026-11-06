@@ -29,9 +29,9 @@ const DEPTS = [
     text: "text-accent",
     tint: "bg-accentbg",
     ring: "border-accent shadow-[0_8px_30px_-8px_var(--color-accent)]",
-    panelBar: "border-[#e98a4f]",
-    panelTint: "bg-[#e98a4f]/10",
-    panelDot: "bg-[#e98a4f]",
+    panelBar: "border-[#a5b4fc]",
+    panelTint: "bg-[#a5b4fc]/10",
+    panelDot: "bg-[#a5b4fc]",
   },
   {
     n: 3,
@@ -129,17 +129,17 @@ function useStage() {
 function RecordPanel({ stage, focus }: { stage: number; focus: number | null }) {
   const writing = stage < 5 && focus === null;
   return (
-    <div className="overflow-hidden rounded-2xl border border-[#33312c] bg-[#1a1917] shadow-xl">
-      <div className="flex items-center justify-between border-b border-[#33312c] px-5 py-3">
+    <div className="overflow-hidden rounded-2xl border border-[#23264a] bg-[#0b0d1a] shadow-xl">
+      <div className="flex items-center justify-between border-b border-[#23264a] px-5 py-3">
         <span className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 rounded-full bg-[#f08a80]" />
           <span className="h-2.5 w-2.5 rounded-full bg-[#f0c062]" />
           <span className="h-2.5 w-2.5 rounded-full bg-[#6fd3a0]" />
-          <span className="mono ml-2 text-[11px] text-[#a19c93]">data/settlements.json</span>
+          <span className="mono ml-2 text-[11px] text-[#8a8fa8]">data/settlements.json</span>
         </span>
         {writing ? (
-          <span className="flex items-center gap-1.5 rounded-full bg-[#3a2416] px-2.5 py-0.5 text-[11px] font-medium text-[#e98a4f]">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#e98a4f]" />
+          <span className="flex items-center gap-1.5 rounded-full bg-[#3a2416] px-2.5 py-0.5 text-[11px] font-medium text-[#a5b4fc]">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#a5b4fc]" />
             writing…
           </span>
         ) : (
@@ -149,8 +149,8 @@ function RecordPanel({ stage, focus }: { stage: number; focus: number | null }) 
         )}
       </div>
 
-      <div className="mono overflow-x-auto py-4 text-[12.5px] leading-[1.75] text-[#ece9e2]">
-        <div className="px-5 text-[#a19c93]">{"{"}</div>
+      <div className="mono overflow-x-auto py-4 text-[12.5px] leading-[1.75] text-[#e6e9f5]">
+        <div className="px-5 text-[#8a8fa8]">{"{"}</div>
         {RECORD.map((group) => {
           const d = group.stage >= 1 && group.stage <= 4 ? DEPTS[group.stage - 1] : null;
           const shown = focus !== null || group.stage <= stage;
@@ -169,7 +169,7 @@ function RecordPanel({ stage, focus }: { stage: number; focus: number | null }) 
             >
               {d && (
                 <span
-                  className={`absolute left-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-[#1a1917] ${d.panelDot} ${active ? "record-badge-pop" : ""}`}
+                  className={`absolute left-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-[#0b0d1a] ${d.panelDot} ${active ? "record-badge-pop" : ""}`}
                 >
                   {d.n}
                 </span>
@@ -181,31 +181,31 @@ function RecordPanel({ stage, focus }: { stage: number; focus: number | null }) 
                   style={active && !focus ? { animationDelay: `${li * 140}ms` } : undefined}
                 >
                   <span className="text-[#9bb8e0]">&quot;{l.k}&quot;</span>
-                  <span className="text-[#a19c93]">: </span>
+                  <span className="text-[#8a8fa8]">: </span>
                   <span
                     className={
                       isStatus
                         ? `rounded px-1 font-semibold text-[#6fd3a0] ${active ? "record-paid" : ""}`
                         : l.v === "null"
-                          ? "text-[#a19c93]"
+                          ? "text-[#8a8fa8]"
                           : l.s
                             ? "text-[#f0c062]"
-                            : "text-[#e98a4f]"
+                            : "text-[#a5b4fc]"
                     }
                   >
                     {l.s ? `"${l.v}"` : l.v}
                   </span>
-                  <span className="text-[#a19c93]">,</span>
+                  <span className="text-[#8a8fa8]">,</span>
                   {l.note && <span className="text-[#6b6760]">{"  // "}{l.note}</span>}
                   {writing && active && li === group.lines.length - 1 && (
-                    <span className="record-cursor ml-1 inline-block h-[1.05em] w-[7px] translate-y-[3px] bg-[#e98a4f]" />
+                    <span className="record-cursor ml-1 inline-block h-[1.05em] w-[7px] translate-y-[3px] bg-[#a5b4fc]" />
                   )}
                 </div>
               ))}
             </div>
           );
         })}
-        <div className="px-5 text-[#a19c93]">{"}"}</div>
+        <div className="px-5 text-[#8a8fa8]">{"}"}</div>
       </div>
     </div>
   );
@@ -226,7 +226,7 @@ export function FourDepartments() {
         <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
           What Sangam is
         </p>
-        <h2 className="text-balance text-3xl font-bold tracking-tight sm:text-5xl">
+        <h2 className="text-balance text-3xl font-medium tracking-[-0.035em] sm:text-5xl">
           Four departments, one record.
         </h2>
         <p className="mt-4 text-balance text-muted">
@@ -255,7 +255,7 @@ export function FourDepartments() {
               >
                 <div className="flex items-start gap-5">
                   <span
-                    className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-base font-bold text-white dark:text-[#1a1917] ${d.dot}`}
+                    className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-base font-bold text-white dark:text-[#0b0d1a] ${d.dot}`}
                   >
                     {on && <span className={`step-ripple-fast absolute inset-0 rounded-full ${d.dot}`} />}
                     <span className="relative">{d.n}</span>
@@ -289,7 +289,7 @@ export function FourDepartments() {
       </div>
 
       {/* Boundaries */}
-      <div className="mt-14 rounded-3xl border border-line bg-surface2 p-6 text-center sm:p-8">
+      <div className="mt-14 glass-3d rounded-3xl p-6 text-center sm:p-8">
         <div className="mb-4 flex flex-wrap justify-center gap-2">
           {["Not a wallet", "Not an exchange", "Not a checkout page"].map((t) => (
             <span

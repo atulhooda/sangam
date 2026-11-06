@@ -1,6 +1,7 @@
-import { UntrustedPayeeError, assertVerifiedPayee, resolveMerchant } from "@sangam/ens";
+import { UntrustedPayeeError, assertFairInvoice, assertVerifiedPayee, resolveMerchant } from "@sangam/ens";
 import { createPayingFetch, hashscanTxUrl } from "@sangam/hedera";
 import { assertBudgetAllows, BudgetExceededError, budgetSnapshot, recordBudgetSpend } from "@/lib/server/budget";
+import { parseAttack } from "@/lib/demo-shop";
 import { merchantEnsName } from "@/lib/server/merchant";
 import { canPayAsAgent } from "@/lib/server/pipeline";
 import { currentUser } from "@/lib/server/session";
@@ -20,9 +21,14 @@ export const maxDuration = 60;
  *                                        buys the first match
  *   { kind: "scam" }    tries a fake IRCTC site that impersonates
  *                       tickets.sangam.eth: the agent must refuse it
+ *   { kind: "hacked" }  tries the demo bakery whose backend was hacked to
+ *                       bill 10× its ENS price (or pay another account):
+ *                       the agent must refuse it
  *
  * The agent only pays verified Sangam merchants: before signing, every
- * invoice is checked against the merchant's ENS record (assertVerifiedPayee).
+ * invoice is checked against the merchant's ENS record: who to pay
+ * (assertVerifiedPayee) and, for fixed-price merchants, how much
+ * (assertFairInvoice). ONDC orders are priced per order, so they get the first.
  */
 export async function POST(req: Request) {
   // The agent spends real (testnet) USDC: only a Self-verified buyer may start it.
@@ -33,7 +39,7 @@ export async function POST(req: Request) {
   if (!canPayAsAgent()) {
     return Response.json({ error: "Set CUSTOMER_ACCOUNT_ID, CUSTOMER_PRIVATE_KEY and SETTLEMENT_SHARED_SECRET in .env" }, { status: 412 });
   }
-  const body = (await req.json().catch(() => ({}))) as { kind?: "ticket" | "ondc" | "scam"; q?: string; qty?: number };
+  const body = (await req.json().catch(() => ({}))) as { kind?: "ticket" | "ondc" | "scam" | "hacked"; attack?: string; q?: string; qty?: number };
   const origin = new URL(req.url).origin;
 
   let url: URL;
@@ -41,6 +47,9 @@ export async function POST(req: Request) {
   if (body.kind === "scam") {
     url = new URL(`${origin}/demo/fake-irctc?from=CSMT&to=PUNE`);
     what = "a ticket from a fake IRCTC site";
+  } else if (body.kind === "hacked") {
+    url = new URL(`${origin}/demo/shop/bakery/book?attack=${parseAttack(body.attack)}`);
+    what = "a cake from the hacked bakery";
   } else if (body.kind === "ondc") {
     const res = await fetch(`${origin}/merchant/ondc/catalog?q=${encodeURIComponent(body.q ?? "atta")}`, { cache: "no-store" });
     const catalog = (await res.json()) as { results?: { name: string; orderUrl: string }[]; error?: string };
@@ -63,11 +72,14 @@ export async function POST(req: Request) {
     const probe = await fetch(url, { cache: "no-store" });
     const probeHeader = probe.headers.get("PAYMENT-REQUIRED");
     if (probe.status !== 402 || !probeHeader) throw new Error(`expected 402 from merchant, got ${probe.status}`);
-    const priceAtomic = (JSON.parse(atob(probeHeader)) as Invoice).accepts[0]?.amount;
-    if (!priceAtomic) throw new Error("merchant returned no payment options");
-    await assertBudgetAllows(BigInt(priceAtomic));
+    const option = (JSON.parse(atob(probeHeader)) as Invoice).accepts[0];
+    if (!option?.amount) throw new Error("merchant returned no payment options");
+    // ENS first: a dishonest invoice is refused for what it is, whatever the budget.
+    const guard = body.kind === "ondc" ? assertVerifiedPayee : assertFairInvoice;
+    await guard(option);
+    await assertBudgetAllows(BigInt(option.amount));
 
-    const { buy } = createPayingFetch({ guard: assertVerifiedPayee });
+    const { buy } = createPayingFetch({ guard });
     const purchase = await buy<Record<string, unknown>>(url);
     if (purchase.status >= 400 || !purchase.settle?.success) {
       return Response.json({ error: `merchant answered ${purchase.status}`, detail: purchase.body }, { status: 502 });
