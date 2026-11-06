@@ -16,6 +16,10 @@ export function hashscanTopicUrl(topicId: string, network = "testnet"): string {
   return `https://hashscan.io/${network}/topic/${topicId}`;
 }
 
+export function hashscanScheduleUrl(scheduleId: string, network = "testnet"): string {
+  return `https://hashscan.io/${network}/schedule/${scheduleId}`;
+}
+
 export function hashscanAccountUrl(accountId: string, network = "testnet"): string {
   return `https://hashscan.io/${network}/account/${accountId}`;
 }

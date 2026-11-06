@@ -1,0 +1,18 @@
+[
+  {
+    "subscriber_id": "sangam-bap.local",
+    "unique_key_id": "k-mvy1swvf",
+    "type": "BAP",
+    "signing_public_key": "+3USjcpiZ0g4ty8AyRt4DOnlbfUaT9XSHjsweg6eUGk=",
+    "domain": "ONDC:RET10",
+    "city": "std:020"
+  },
+  {
+    "subscriber_id": "annapurna-seller.local",
+    "unique_key_id": "k-mvy1swvf",
+    "type": "BPP",
+    "signing_public_key": "kJwmemZMnlnR5zQheEFyNprw+Q46QlJbfcJoqOuam2E=",
+    "domain": "ONDC:RET10",
+    "city": "std:020"
+  }
+]

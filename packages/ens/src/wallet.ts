@@ -1,4 +1,5 @@
-import { createWalletClient, http, type Hex } from "viem";
+import { createWalletClient, type Hex } from "viem";
+import { sepoliaTransport } from "./client.ts";
 import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
 import { env, envOr } from "@sangam/shared";
@@ -7,7 +8,7 @@ import { env, envOr } from "@sangam/shared";
 export function sangamWallet() {
   const key = env("ENS_OWNER_PRIVATE_KEY");
   const account = privateKeyToAccount((key.startsWith("0x") ? key : `0x${key}`) as Hex);
-  return createWalletClient({ chain: sepolia, transport: http(process.env.SEPOLIA_RPC_URL || undefined), account });
+  return createWalletClient({ chain: sepolia, transport: sepoliaTransport(), account });
 }
 
 /** The parent every merchant name lives under. */

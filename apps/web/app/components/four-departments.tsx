@@ -15,9 +15,9 @@ const DEPTS = [
     text: "text-info",
     tint: "bg-infobg",
     ring: "border-info shadow-[0_8px_30px_-8px_var(--color-info)]",
-    panelBar: "border-[#9bb8e0]",
-    panelTint: "bg-[#9bb8e0]/10",
-    panelDot: "bg-[#9bb8e0]",
+    panelBar: "border-[#3987e5]",
+    panelTint: "bg-[#3987e5]/10",
+    panelDot: "bg-[#3987e5]",
   },
   {
     n: 2,
@@ -29,9 +29,9 @@ const DEPTS = [
     text: "text-accent",
     tint: "bg-accentbg",
     ring: "border-accent shadow-[0_8px_30px_-8px_var(--color-accent)]",
-    panelBar: "border-[#e98a4f]",
-    panelTint: "bg-[#e98a4f]/10",
-    panelDot: "bg-[#e98a4f]",
+    panelBar: "border-[#977dff]",
+    panelTint: "bg-[#977dff]/10",
+    panelDot: "bg-[#977dff]",
   },
   {
     n: 3,
@@ -43,9 +43,9 @@ const DEPTS = [
     text: "text-ok",
     tint: "bg-okbg",
     ring: "border-ok shadow-[0_8px_30px_-8px_var(--color-ok)]",
-    panelBar: "border-[#6fd3a0]",
-    panelTint: "bg-[#6fd3a0]/10",
-    panelDot: "bg-[#6fd3a0]",
+    panelBar: "border-[#35c135]",
+    panelTint: "bg-[#35c135]/10",
+    panelDot: "bg-[#35c135]",
   },
   {
     n: 4,
@@ -129,28 +129,28 @@ function useStage() {
 function RecordPanel({ stage, focus }: { stage: number; focus: number | null }) {
   const writing = stage < 5 && focus === null;
   return (
-    <div className="overflow-hidden rounded-2xl border border-[#33312c] bg-[#1a1917] shadow-xl">
-      <div className="flex items-center justify-between border-b border-[#33312c] px-5 py-3">
+    <div className="overflow-hidden rounded-2xl border border-[#2e2d3a] bg-[#0e0d13] shadow-xl">
+      <div className="flex items-center justify-between border-b border-[#2e2d3a] px-5 py-3">
         <span className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-[#f08a80]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#e06456]" />
           <span className="h-2.5 w-2.5 rounded-full bg-[#f0c062]" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#6fd3a0]" />
-          <span className="mono ml-2 text-[11px] text-[#a19c93]">data/settlements.json</span>
+          <span className="h-2.5 w-2.5 rounded-full bg-[#35c135]" />
+          <span className="mono ml-2 text-[11px] text-[#a4a3af]">data/settlements.json</span>
         </span>
         {writing ? (
-          <span className="flex items-center gap-1.5 rounded-full bg-[#3a2416] px-2.5 py-0.5 text-[11px] font-medium text-[#e98a4f]">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#e98a4f]" />
+          <span className="flex items-center gap-1.5 rounded-full bg-[#3a2416] px-2.5 py-0.5 text-[11px] font-medium text-[#977dff]">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#977dff]" />
             writing…
           </span>
         ) : (
-          <span className="rounded-full bg-[#173226] px-2.5 py-0.5 text-[11px] font-medium text-[#6fd3a0]">
+          <span className="rounded-full bg-[#173226] px-2.5 py-0.5 text-[11px] font-medium text-[#35c135]">
             ✓ one record
           </span>
         )}
       </div>
 
-      <div className="mono overflow-x-auto py-4 text-[12.5px] leading-[1.75] text-[#ece9e2]">
-        <div className="px-5 text-[#a19c93]">{"{"}</div>
+      <div className="mono overflow-x-auto py-4 text-[12.5px] leading-[1.75] text-[#efeff4]">
+        <div className="px-5 text-[#a4a3af]">{"{"}</div>
         {RECORD.map((group) => {
           const d = group.stage >= 1 && group.stage <= 4 ? DEPTS[group.stage - 1] : null;
           const shown = focus !== null || group.stage <= stage;
@@ -169,7 +169,7 @@ function RecordPanel({ stage, focus }: { stage: number; focus: number | null }) 
             >
               {d && (
                 <span
-                  className={`absolute left-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-[#1a1917] ${d.panelDot} ${active ? "record-badge-pop" : ""}`}
+                  className={`absolute left-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-[#0e0d13] ${d.panelDot} ${active ? "record-badge-pop" : ""}`}
                 >
                   {d.n}
                 </span>
@@ -180,32 +180,32 @@ function RecordPanel({ stage, focus }: { stage: number; focus: number | null }) 
                   className={`whitespace-nowrap ${active && !focus ? "record-line-in" : ""}`}
                   style={active && !focus ? { animationDelay: `${li * 140}ms` } : undefined}
                 >
-                  <span className="text-[#9bb8e0]">&quot;{l.k}&quot;</span>
-                  <span className="text-[#a19c93]">: </span>
+                  <span className="text-[#3987e5]">&quot;{l.k}&quot;</span>
+                  <span className="text-[#a4a3af]">: </span>
                   <span
                     className={
                       isStatus
-                        ? `rounded px-1 font-semibold text-[#6fd3a0] ${active ? "record-paid" : ""}`
+                        ? `rounded px-1 font-semibold text-[#35c135] ${active ? "record-paid" : ""}`
                         : l.v === "null"
-                          ? "text-[#a19c93]"
+                          ? "text-[#a4a3af]"
                           : l.s
                             ? "text-[#f0c062]"
-                            : "text-[#e98a4f]"
+                            : "text-[#977dff]"
                     }
                   >
                     {l.s ? `"${l.v}"` : l.v}
                   </span>
-                  <span className="text-[#a19c93]">,</span>
-                  {l.note && <span className="text-[#6b6760]">{"  // "}{l.note}</span>}
+                  <span className="text-[#a4a3af]">,</span>
+                  {l.note && <span className="text-[#73727e]">{"  // "}{l.note}</span>}
                   {writing && active && li === group.lines.length - 1 && (
-                    <span className="record-cursor ml-1 inline-block h-[1.05em] w-[7px] translate-y-[3px] bg-[#e98a4f]" />
+                    <span className="record-cursor ml-1 inline-block h-[1.05em] w-[7px] translate-y-[3px] bg-[#977dff]" />
                   )}
                 </div>
               ))}
             </div>
           );
         })}
-        <div className="px-5 text-[#a19c93]">{"}"}</div>
+        <div className="px-5 text-[#a4a3af]">{"}"}</div>
       </div>
     </div>
   );
@@ -226,7 +226,7 @@ export function FourDepartments() {
         <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
           What Sangam is
         </p>
-        <h2 className="text-balance text-3xl font-bold tracking-tight sm:text-5xl">
+        <h2 className="display text-balance text-3xl font-semibold tracking-tight sm:text-5xl">
           Four departments, one record.
         </h2>
         <p className="mt-4 text-balance text-muted">
@@ -255,7 +255,7 @@ export function FourDepartments() {
               >
                 <div className="flex items-start gap-5">
                   <span
-                    className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-base font-bold text-white dark:text-[#1a1917] ${d.dot}`}
+                    className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-base font-bold text-white dark:text-[#0e0d13] ${d.dot}`}
                   >
                     {on && <span className={`step-ripple-fast absolute inset-0 rounded-full ${d.dot}`} />}
                     <span className="relative">{d.n}</span>

@@ -2,6 +2,12 @@ node_modules/
 .env
 data/settlements.json
 data/*.tmp
+data/ondc-keys.local.json
 dist/
 .DS_Store
 apps/web/.next
+*.tsbuildinfo
+data/ens-cache.local.json
+data/agent-budget.local.json
+data/hcs-chain.local.json
+data/identities.local.json

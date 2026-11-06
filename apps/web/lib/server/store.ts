@@ -2,9 +2,9 @@ import "server-only";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { REPO_ROOT, type Settlement } from "@sangam/shared";
+import { DATA_DIR, type Settlement } from "@sangam/shared";
 
-const FILE = path.join(REPO_ROOT, "data/settlements.json");
+const FILE = path.join(DATA_DIR, "settlements.json");
 
 /*
  * Same flat-file store the old settlement-agent used (data/settlements.json),

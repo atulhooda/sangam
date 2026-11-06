@@ -8,6 +8,12 @@ export type MerchantRecord = {
   network: string;
   upiHandle: string;
   priceInrPaise: number;
+  /**
+   * sangam.status: "verified" once Sangam has checked the merchant (Self proof
+   * + company certificate); "suspended" to stop agents paying it. Missing on
+   * names issued before verification existed: agents treat those as unverified.
+   */
+  status?: string;
 };
 
 export type SettlementStatus = "received" | "confirmed" | "decided" | "paid" | "held" | "failed";
@@ -15,6 +21,8 @@ export type SettlementStatus = "received" | "confirmed" | "decided" | "paid" | "
 export type PayoutMode = "mock" | "razorpayx-test";
 
 export type Settlement = {
+  /** How Sangam learned of the payment: the merchant's x402 notice, or USDC seen landing in its deposit account. */
+  source?: "x402" | "transfer";
   id: string;
   merchant: string;
   hederaTxId: string;
@@ -36,6 +44,18 @@ export type Settlement = {
   chainVerified?: boolean;
   /** HCS topic the receipt went to, so the dashboard can link it. */
   hcsTopicId?: string | null;
+  /** The price this order was quoted at, when it isn't the merchant's fixed price (ONDC). */
+  quotedInrPaise?: number | null;
+  /** Scheduled USDC refund back to the payer, created when the payment is held. */
+  refund?: {
+    scheduleId: string;
+    transactionId: string;
+    amountAtomic: string;
+    payer: string;
+    createdAt: string;
+  } | null;
+  /** Set when the payment bought an order on ONDC. */
+  ondc?: OndcOrderInfo | null;
   status: SettlementStatus;
   error: string | null;
   createdAt: string;
@@ -48,6 +68,26 @@ export type SettlementNotice = {
   hederaTxId: string;
   payer?: string;
   usdcAmount: string;
+  /** Per-order quote (ONDC); falls back to the merchant's ENS price. */
+  quotedInrPaise?: number;
+  ondc?: OndcOrderInfo;
+  /** "x402" (the merchant's notice, the default) or "transfer" (Sangam saw USDC land in the merchant's deposit account). */
+  source?: "x402" | "transfer";
+};
+
+/** The ONDC side of a settlement: which seller, which order, where the rupees go. */
+export type OndcOrderInfo = {
+  transactionId: string;
+  orderId: string;
+  state: string;
+  bppId: string;
+  bppUri: string;
+  providerId: string;
+  providerName: string;
+  items: { id: string; name: string; count: number }[];
+  quoteInrPaise: number;
+  /** Seller's UPI from the on_init settlement details. */
+  sellerUpi: string;
 };
 
 export type Stats = {
@@ -64,6 +104,10 @@ export type Stats = {
   mocks: { chainVerify: boolean; og: boolean; psp: boolean; ens: boolean; hcs: boolean };
   /** Whether the dashboard's buttons can run. */
   actions: { simulate: boolean; payAsAgent: boolean };
+  /** The buyer agent's cumulative budget, or null when CUSTOMER_TOTAL_BUDGET is unset. */
+  budget?: { limitAtomic: string; spentAtomic: string; remainingAtomic: string } | null;
+  /** The buyer agent's Hedera account (CUSTOMER_ACCOUNT_ID), when set. */
+  customerAccountId?: string | null;
 };
 
 export type Quote = {
@@ -91,4 +135,15 @@ export type Invoice = {
     maxTimeoutSeconds: number;
     extra?: { feePayer?: string };
   }[];
+};
+
+/** GET /api/ens: a merchant's ENS identity as the dashboard shows it. */
+export type EnsView = {
+  name: string;
+  parent: string;
+  source: "ens" | "offline";
+  records: { key: string; value: string }[];
+  registry: string | null;
+  resolver: string | null;
+  links: { app: string; registry: string | null; resolver: string | null };
 };

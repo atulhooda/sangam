@@ -29,3 +29,20 @@ export async function associateUsdc(accountId: string, privateKey: string): Prom
     client.close();
   }
 }
+
+/** Plain USDC transfer signed by `fromKey` (an ECDSA hex key). Returns the transaction id. */
+export async function transferUsdc(fromAccount: string, fromKey: string, toAccount: string, atomic: bigint): Promise<string> {
+  const { TransferTransaction } = await import("@hiero-ledger/sdk");
+  const client = Client.forTestnet().setOperator(fromAccount, PrivateKey.fromStringECDSA(fromKey));
+  try {
+    const tx = await new TransferTransaction()
+      .addTokenTransfer(usdcTokenId(), fromAccount, -atomic)
+      .addTokenTransfer(usdcTokenId(), toAccount, atomic)
+      .execute(client);
+    const receipt = await tx.getReceipt(client);
+    if (receipt.status.toString() !== "SUCCESS") throw new Error(`transfer ${receipt.status.toString()}`);
+    return tx.transactionId.toString();
+  } finally {
+    client.close();
+  }
+}

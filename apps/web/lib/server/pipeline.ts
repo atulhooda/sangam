@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { resolveMerchant } from "@sangam/ens";
-import { confirmPayment, writeReceipt } from "@sangam/hedera";
+import { issueSubname, resolveMerchant } from "@sangam/ens";
+import { confirmPayment, createScheduledRefund, writeReceipt } from "@sangam/hedera";
 import { decide, mockDecision, ogBalance } from "@sangam/og";
 import {
   envOr,
@@ -14,11 +14,14 @@ import {
   type SettlementNotice,
   type Stats,
 } from "@sangam/shared";
+import { budgetSnapshot } from "./budget";
 import { findByTx, insertSettlement, listSettlements, recentForMerchant, recentFromPayer, updateSettlement } from "./store";
 
 /*
  * Sangam's settlement pipeline:
  *
+ *   0. identify @sangam/ens     resolve the merchant; ONDC sellers get their
+ *                               ondc-<seller>.sangam.eth subname on first order
  *   1. verify   @sangam/hedera  Mirror Node: did the USDC really land?
  *   2. decide   @sangam/og      0G Compute: pay out or hold, and the fee
  *   3. pay out  @sangam/shared  RazorpayX UPI payout in INR
@@ -64,6 +67,9 @@ export async function acceptNotice(notice: SettlementNotice): Promise<Settlement
     hcsSequence: null,
     chainVerified: false,
     hcsTopicId: null,
+    quotedInrPaise: notice.quotedInrPaise ?? null,
+    ondc: notice.ondc ?? null,
+    source: notice.source ?? "x402",
     status: "received",
     error: null,
     createdAt: now,
@@ -78,7 +84,7 @@ export async function runPipeline(start: Settlement): Promise<void> {
   const simulated = isSimulatedTx(start.hederaTxId);
   try {
     let s = start;
-    const merchant = await resolveMerchant(s.merchant);
+    const merchant = await identifyMerchant(s);
     await pause();
 
     // 1. Verify the payment on-chain.
@@ -102,7 +108,7 @@ export async function runPipeline(start: Settlement): Promise<void> {
     // 2. Decide with 0G Compute (or the local rule when OG_MOCK=true).
     const input = {
       merchant: s.merchant,
-      quotedPaise: merchant.priceInrPaise,
+      quotedPaise: s.quotedInrPaise ?? merchant.priceInrPaise,
       receivedPaise: inrGrossPaise,
       fxRate,
       payer,
@@ -112,7 +118,11 @@ export async function runPipeline(start: Settlement): Promise<void> {
         .slice(0, 5)
         .map((r) => ({ inrGrossPaise: r.inrGrossPaise, decision: r.decision })),
     };
-    const decision = m.og ? mockDecision(input) : await decide(input);
+    let decision = m.og ? mockDecision(input) : await decide(input);
+    // Never pay a seller who didn't accept the ONDC order.
+    if (s.ondc && s.ondc.state !== "Accepted") {
+      decision = { ...decision, decision: "hold", reason: `ONDC order not accepted (${s.ondc.state}); held for review.` };
+    }
     const payoutPaise = Math.floor(inrGrossPaise * (1 - decision.feeBps / 10_000));
     s = await updateSettlement(s.id, {
       status: "decided",
@@ -125,7 +135,9 @@ export async function runPipeline(start: Settlement): Promise<void> {
     });
     await pause();
 
-    // 3. Pay out over UPI, unless held.
+    // 3. Pay out over UPI, unless held. A held payment gets a scheduled USDC
+    // refund back to the payer: the schedule executes on Hedera once the
+    // treasury's signature is on it, and nobody can alter it afterwards.
     if (decision.decision === "payout") {
       const result = await payout(
         { merchant: s.merchant, vpa: merchant.upiHandle, paise: payoutPaise, reference: s.id },
@@ -134,13 +146,23 @@ export async function runPipeline(start: Settlement): Promise<void> {
       s = await updateSettlement(s.id, { status: "paid", payoutRef: result.ref, payoutMode: result.mode });
     } else {
       s = await updateSettlement(s.id, { status: "held" });
+      if (!simulated && !m.hcs && payer && hasEnv("OPERATOR_ACCOUNT_ID", "OPERATOR_PRIVATE_KEY", "TREASURY_ACCOUNT_ID")) {
+        try {
+          // From the account that received it: the merchant's deposit account, or the shared treasury.
+          const refund = await createScheduledRefund(payer, s.usdcAmount, `Sangam refund ${s.id}`, merchant.hederaPayTo);
+          s = await updateSettlement(s.id, { refund: { ...refund, createdAt: new Date().toISOString() } });
+        } catch (err) {
+          await updateSettlement(s.id, { error: `scheduled refund failed: ${(err as Error).message}` });
+        }
+      }
     }
 
-    // 4. Tamper-evident receipt on HCS. A failure here doesn't undo the payout.
+    // 4. Tamper-evident receipt on HCS, hash-chained to the one before it. A
+    // failure here doesn't undo the payout.
     const topicId = process.env.HCS_TOPIC_ID;
     if (!simulated && !m.hcs && topicId) {
       try {
-        const hcsSequence = await writeReceipt(topicId, {
+        const { seq: hcsSequence } = await writeReceipt(topicId, {
           id: s.id,
           merchant: s.merchant,
           hederaTxId: s.hederaTxId,
@@ -154,6 +176,8 @@ export async function runPipeline(start: Settlement): Promise<void> {
           ogVerified: s.ogVerified,
           payoutRef: s.payoutRef,
           payoutMode: s.payoutMode,
+          ...(s.refund ? { refundScheduleId: s.refund.scheduleId } : {}),
+          ...(s.ondc ? { ondcOrderId: s.ondc.orderId, ondcTransactionId: s.ondc.transactionId, ondcSeller: s.ondc.bppId } : {}),
         });
         await updateSettlement(s.id, { hcsSequence, hcsTopicId: topicId });
       } catch (err) {
@@ -163,6 +187,30 @@ export async function runPipeline(start: Settlement): Promise<void> {
   } catch (err) {
     console.error(`[settlement] ${start.id} failed: ${(err as Error).message}`);
     await updateSettlement(start.id, { status: "failed", error: (err as Error).message }).catch(() => undefined);
+  }
+}
+
+/**
+ * Resolve the merchant by ENS name. An ONDC seller Sangam hasn't settled for
+ * before has no name yet, so Sangam issues ondc-<seller>.sangam.eth first,
+ * with the seller's UPI handle from ONDC's on_init settlement details. Every
+ * later step reads the merchant from ENS, like any other merchant.
+ */
+async function identifyMerchant(s: Settlement) {
+  try {
+    return await resolveMerchant(s.merchant);
+  } catch (err) {
+    if (!s.ondc) throw err;
+    const label = s.merchant.split(".")[0]!;
+    console.log(`[settlement] issuing ${s.merchant} for ONDC seller ${s.ondc.providerName}`);
+    await issueSubname(label, {
+      endpoint: s.ondc.bppUri,
+      hederaPayTo: process.env.TREASURY_ACCOUNT_ID ?? "",
+      network: "hedera:testnet",
+      priceInrPaise: s.ondc.quoteInrPaise,
+      upiHandle: s.ondc.sellerUpi,
+    });
+    return resolveMerchant(s.merchant);
   }
 }
 
@@ -208,5 +256,8 @@ export async function stats(): Promise<Stats> {
     mode: mockedCount === Object.keys(m).length ? "simulation" : mockedCount === 0 ? "live" : "mixed",
     mocks: m,
     actions: { simulate: canSimulate(), payAsAgent: canPayAsAgent() },
+    budget: await budgetSnapshot(),
+    /** The buyer agent's Hedera account, so the buyer desk can show its purchases. */
+    customerAccountId: hasEnv("CUSTOMER_ACCOUNT_ID") ? process.env.CUSTOMER_ACCOUNT_ID! : null,
   };
 }
