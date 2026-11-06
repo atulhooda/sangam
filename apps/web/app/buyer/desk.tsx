@@ -6,6 +6,7 @@ import { AgentRunOverlay, runPayAsAgent, useAgentRun } from "../components/agent
 import { Card, CardHead, MockTag, RailBadge, RailToggle, Spinner, StatusPill, idBadge, useRail } from "../components/ui";
 import { Logo } from "../components/space/kit";
 import { AccountMenu } from "../components/account-menu";
+import { BoloBuyer } from "./bolo-pay";
 import { RAIL_NAME, clock, explorerName, explorerTx, isSimTx, railOf, receiptLink, rupees, timeAgo, tokenOf, usdc } from "../dashboard/format";
 
 /*
@@ -394,6 +395,9 @@ export function BuyerDesk({ me }: { me: Me }) {
             </ol>
           )}
         </Card>
+
+        {/* ── bolo: pay by voice ── */}
+        <BoloBuyer />
 
         {/* ── 4. live transactions ── */}
         <Card>

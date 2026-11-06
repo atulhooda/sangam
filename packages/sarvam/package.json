@@ -1,0 +1,14 @@
+{
+  "name": "@sangam/sarvam",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bolo Sangam's voice stack: Sarvam AI Saaras speech-to-text, Bulbul text-to-speech and Sarvam-105B parsing of Hindi/Hinglish voice commands into invoices and intents.",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@sangam/shared": "*"
+  }
+}
