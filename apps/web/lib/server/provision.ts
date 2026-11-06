@@ -1,7 +1,6 @@
 import "server-only";
 import { issueSubname, parentName, resolveMerchant } from "@sangam/ens";
 import { createDepositAccount } from "@sangam/hedera";
-import { depositAddress, whitechainEnabled } from "@sangam/whitechain";
 import { findIdentity, updateMerchantShop, type VerifiedIdentity } from "./identity";
 import { merchantEnsName, sangamApiUrl } from "./merchant";
 
@@ -12,8 +11,6 @@ import { merchantEnsName, sangamApiUrl } from "./merchant";
  *   1. a Hedera deposit account of its own (created once, reused on retries)
  *   2. <label>.sangam.eth on ENSv2 Sepolia, with sangam.payTo = that account,
  *      sangam.upi, sangam.priceInrPaise, url and sangam.status = verified,
- *      plus sangam.payTo.whitechain = its derived USDT deposit address on
- *      Whitechain (no transaction needed to create it) when that rail is on
  *
  * After this, any agent can find the merchant by name, check it's verified,
  * and pay it; USDC landing in the account becomes rupees on its UPI.
@@ -63,7 +60,6 @@ export async function provisionMerchant(nullifier: string): Promise<VerifiedIden
         priceInrPaise: identity.shop!.priceInrPaise,
         upiHandle: identity.shop!.upiHandle,
         status: "verified",
-        ...(whitechainEnabled() ? { whitechainPayTo: depositAddress(identity.label) } : {}),
       });
       return await updateMerchantShop(nullifier, {
         publishedUrl: url,

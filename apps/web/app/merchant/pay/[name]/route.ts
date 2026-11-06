@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 /*
  * A Sangam-hosted x402 payment link for merchants with no API of their own:
  * GET /merchant/pay/riya.sangam.eth → 402 for the price in Riya's ENS record,
- * payable to Riya's own deposit account on Hedera (USDC) or Whitechain (USDT)
+ * payable to Riya's own deposit account on Hedera (USDC)
  * → a receipt. Onboarding publishes this
  * URL as the merchant's ENS `url` unless the merchant gives its own endpoint.
  */

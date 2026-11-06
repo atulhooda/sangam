@@ -1,13 +1,10 @@
 import "server-only";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { erc20Abi, parseEventLogs, type Hex } from "viem";
 import { mirrorNodeUrl, usdcTokenId } from "@sangam/hedera";
-import { depositAddress, usdtAddress, whitechainClient, whitechainEnabled } from "@sangam/whitechain";
 import { DATA_DIR, inrPerUsd, usdcAtomicToPaise } from "@sangam/shared";
 import { listDepositAccounts } from "./identity";
 import { DuplicateSettlementError, acceptNotice, runPipeline } from "./pipeline";
-import { knownMerchantNames } from "./rails";
 import { findByTx } from "./store";
 
 /*
@@ -128,63 +125,9 @@ export async function watchDeposits(): Promise<WatchResult> {
         result.errors.push(`${ensName}: ${(err as Error).message}`);
       }
     }
-    if (whitechainEnabled()) {
-      try {
-        await watchWhitechain(cursors, result);
-      } catch (err) {
-        result.errors.push(`whitechain: ${(err as Error).message.split("\n")[0]}`);
-      }
-    }
     writeCursors(cursors);
     return result;
   } finally {
     g.__sangamWatching = false;
   }
-}
-
-/** Whitechain blocks are ~1 s apart: this many blocks is the notice grace period. */
-const WC_GRACE_BLOCKS = BigInt(NOTICE_GRACE_S);
-const WC_MAX_RANGE = 2_000n;
-
-/**
- * The same "send to a name" on Whitechain: USDT Transfer logs into any
- * merchant's derived deposit address become settlements. One eth_getLogs per
- * tick covers every merchant (the `to` topic takes a list).
- */
-async function watchWhitechain(cursors: Record<string, string>, result: WatchResult) {
-  const names = knownMerchantNames();
-  const byAddress = new Map(names.map((n) => [depositAddress(n).toLowerCase(), n]));
-  const client = whitechainClient();
-  const latest = (await client.getBlockNumber()) - WC_GRACE_BLOCKS;
-  const from = cursors["whitechain:block"] ? BigInt(cursors["whitechain:block"]) + 1n : latest - 500n;
-  if (from > latest) return;
-  const to = from + WC_MAX_RANGE < latest ? from + WC_MAX_RANGE : latest;
-  const logs = await client.getLogs({
-    address: usdtAddress(),
-    event: erc20Abi.find((x) => x.type === "event" && x.name === "Transfer")! as Extract<(typeof erc20Abi)[number], { type: "event"; name: "Transfer" }>,
-    args: { to: [...byAddress.keys()] as Hex[] },
-    fromBlock: from,
-    toBlock: to,
-  });
-  result.accounts += byAddress.size;
-  for (const log of parseEventLogs({ abi: erc20Abi, eventName: "Transfer", logs })) {
-    const merchant = byAddress.get(log.args.to.toLowerCase());
-    if (!merchant || !log.transactionHash || findByTx(log.transactionHash)) continue;
-    try {
-      const settlement = await acceptNotice({
-        merchant,
-        hederaTxId: log.transactionHash,
-        rail: "whitechain",
-        payer: log.args.from,
-        usdcAmount: log.args.value.toString(),
-        quotedInrPaise: usdcAtomicToPaise(log.args.value, await inrPerUsd()),
-        source: "transfer",
-      });
-      result.claimed.push({ merchant, hederaTxId: log.transactionHash, usdcAmount: log.args.value.toString() });
-      void runPipeline(settlement);
-    } catch (err) {
-      if (!(err instanceof DuplicateSettlementError)) throw err;
-    }
-  }
-  cursors["whitechain:block"] = to.toString();
 }

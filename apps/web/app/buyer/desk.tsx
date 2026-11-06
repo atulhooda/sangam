@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Me, Settlement } from "@/lib/types";
 import { AgentRunOverlay, runPayAsAgent, useAgentRun } from "../components/agent-run";
-import { Card, CardHead, MockTag, RailBadge, RailToggle, Spinner, StatusPill, idBadge, useRail } from "../components/ui";
+import { Card, CardHead, MockTag, RailBadge, Spinner, StatusPill, idBadge } from "../components/ui";
 import { Logo } from "../components/space/kit";
 import { AccountMenu } from "../components/account-menu";
 import { BoloBuyer } from "./bolo-pay";
-import { RAIL_NAME, clock, explorerName, explorerTx, isSimTx, railOf, receiptLink, rupees, timeAgo, tokenOf, usdc } from "../dashboard/format";
+import { clock, explorerName, explorerTx, isSimTx, receiptLink, rupees, timeAgo, tokenOf, usdc } from "../dashboard/format";
 
 /*
  * The buyer desk: the buyer's AI agent and everything it pays for.
@@ -31,8 +31,6 @@ type WalletView = {
   limitAtomic?: string;
   remainingAtomic?: string;
   faucetLeftAtomic?: string;
-  /** The same agent on Whitechain (USDT, no gas), when that rail is on. */
-  whitechain?: { address: string; balanceAtomic: string | null; explorer: string } | null;
   error?: string;
 };
 
@@ -65,7 +63,6 @@ export function BuyerDesk({ me }: { me: Me }) {
   const [notice, setNotice] = useState<{ ok: boolean; text: string; href?: string } | null>(null);
   const [denied, setDenied] = useState(false);
   const badge = idBadge(me.attestationId);
-  const [railPref, setRail] = useRail();
 
   // Sent here from a merchant desk? Say why.
   useEffect(() => {
@@ -93,14 +90,13 @@ export function BuyerDesk({ me }: { me: Me }) {
 
   // Live transactions: every settlement this wallet paid, refreshed every 2 s.
   const accountId = wallet?.wallet?.accountId ?? null;
-  const wcAddress = wallet?.whitechain?.address?.toLowerCase() ?? null;
   useEffect(() => {
     if (!accountId) return;
     let alive = true;
     const tick = async () => {
       try {
         const rows = (await (await fetch("/api/settlements", { cache: "no-store" })).json()) as Settlement[];
-        if (alive) setSettlements(rows.filter((s) => s.payer === accountId || (!!wcAddress && s.payer?.toLowerCase() === wcAddress)));
+        if (alive) setSettlements(rows.filter((s) => s.payer === accountId));
       } catch {
         /* next tick */
       }
@@ -111,7 +107,7 @@ export function BuyerDesk({ me }: { me: Me }) {
       alive = false;
       clearInterval(t);
     };
-  }, [accountId, wcAddress]);
+  }, [accountId]);
 
   async function connect() {
     setBusy("connect");
@@ -126,14 +122,13 @@ export function BuyerDesk({ me }: { me: Me }) {
     }
   }
 
-  async function fund(on: "hedera" | "whitechain" = "hedera") {
+  async function fund() {
     setBusy("fund");
     setNotice(null);
     try {
-      const res = await fetch("/api/buyer/fund", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rail: on }) });
+      const res = await fetch("/api/buyer/fund", { method: "POST" });
       const body = (await res.json()) as { error?: string; amountAtomic?: string; hashscan?: string };
-      const token = on === "whitechain" ? "USDT on Whitechain" : "USDC";
-      setNotice(res.ok ? { ok: true, text: `Added ${usdc(body.amountAtomic ?? "0", 2)} test ${token} to your agent wallet.`, href: body.hashscan } : { ok: false, text: body.error ?? `Failed (${res.status})` });
+      setNotice(res.ok ? { ok: true, text: `Added ${usdc(body.amountAtomic ?? "0", 2)} test USDC to your agent wallet.`, href: body.hashscan } : { ok: false, text: body.error ?? `Failed (${res.status})` });
       await loadWallet();
     } finally {
       setBusy(null);
@@ -147,18 +142,18 @@ export function BuyerDesk({ me }: { me: Me }) {
     setRun(names.map((ensName) => ({ ensName, state: "queued", text: "waiting" })));
     const set = (ensName: string, line: Omit<RunLine, "ensName">) => setRun((rs) => rs.map((r) => (r.ensName === ensName ? { ensName, ...line } : r)));
     for (const ensName of names) {
-      set(ensName, { state: "paying", text: `checking ENS, reading the 402 invoice, signing ${rail === "whitechain" ? "USDT on Whitechain" : "USDC on Hedera"}…` });
+      set(ensName, { state: "paying", text: "checking ENS, reading the 402 invoice, signing USDC on Hedera…" });
       const { verdict, body } = await runPayAsAgent(
         agentRun.run,
-        { title: `Buying as your agent · ${RAIL_NAME[rail]}`, target: ensName },
-        { ensName, rail },
+        { title: "Buying as your agent", target: ensName },
+        { ensName },
         "/api/agent/buy",
       );
       if (verdict.kind === "refused") set(ensName, { state: "refused", text: `🛡️ refused, nothing signed: ${verdict.message}` });
       else if (verdict.kind === "paid")
         set(ensName, {
           state: "paid",
-          text: `paid ${usdc(String(body?.priceAtomic ?? "0"), 2)} ${body?.rail === "whitechain" ? "USDT" : "USDC"} → ${String(body?.payTo ?? "merchant")} · ${String(body?.hederaTxId ?? "")}`,
+          text: `paid ${usdc(String(body?.priceAtomic ?? "0"), 2)} USDC → ${String(body?.payTo ?? "merchant")} · ${String(body?.hederaTxId ?? "")}`,
           href: verdict.hashscan,
         });
       else set(ensName, { state: "failed", text: verdict.message });
@@ -170,8 +165,6 @@ export function BuyerDesk({ me }: { me: Me }) {
   const byName = useMemo(() => new Map((merchants ?? []).map((m) => [m.ensName, m])), [merchants]);
   const rows = settlements ?? [];
   const w = wallet?.wallet ?? null;
-  const rails: ("hedera" | "whitechain")[] = wallet?.whitechain ? ["hedera", "whitechain"] : ["hedera"];
-  const rail = rails.includes(railPref) ? railPref : "hedera";
   const verified = (merchants ?? []).filter((m) => m.verified);
   const pickedList = verified.filter((m) => picked.has(m.ensName)).map((m) => m.ensName);
   const pickedCost = verified.filter((m) => picked.has(m.ensName)).reduce((s, m) => s + BigInt(m.priceUsdcAtomic ?? "0"), 0n);
@@ -204,7 +197,7 @@ export function BuyerDesk({ me }: { me: Me }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Your shopping agent</h1>
-            <p className="mt-1 text-sm text-muted">It pays merchants in USDC on Hedera or USDT on Whitechain, with no approval step. They get rupees on UPI.</p>
+            <p className="mt-1 text-sm text-muted">It pays merchants in USDC on Hedera, with no approval step. They get rupees on UPI.</p>
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-okbg px-3 py-1 text-xs font-medium text-ok" title={`Verified via Self${me.name ? ` — ${me.name}` : ""}`}>
             {badge.label} verified
@@ -279,28 +272,6 @@ export function BuyerDesk({ me }: { me: Me }) {
               </div>
             </div>
           )}
-          {w && wallet?.whitechain && (
-            <div className="flex flex-col gap-3 border-t border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-xs text-muted">On Whitechain · same agent, no gas needed</p>
-                <a className="mono mt-1 block truncate text-sm text-accent underline-offset-2 hover:underline" href={wallet.whitechain.explorer} target="_blank" rel="noreferrer" title={wallet.whitechain.address}>
-                  {wallet.whitechain.address} ↗
-                </a>
-              </div>
-              <div className="flex items-center gap-3">
-                <p className="text-lg font-semibold tracking-tight tabular-nums">
-                  {wallet.whitechain.balanceAtomic == null ? "—" : usdc(wallet.whitechain.balanceAtomic, 2)} <span className="text-sm font-normal text-muted">USDT</span>
-                </p>
-                <button
-                  onClick={() => fund("whitechain")}
-                  disabled={busy !== null || wallet.faucetLeftAtomic === "0"}
-                  className="rounded-lg border border-accent/50 bg-surface px-3 py-1.5 text-xs font-medium transition-colors hover:border-accent disabled:opacity-50"
-                >
-                  {busy === "fund" ? "Sending…" : "+ Add test USDT"}
-                </button>
-              </div>
-            </div>
-          )}
         </Card>
 
         {/* ── 2 + 3. merchants and the agent ── */}
@@ -361,9 +332,8 @@ export function BuyerDesk({ me }: { me: Me }) {
           <div className="flex flex-col gap-3 border-t border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-xs text-muted">
-                {w ? `Selected ${pickedList.length} · about ${usdc(pickedCost.toString(), 2)} ${rail === "whitechain" ? "USDT" : "USDC"}` : "Connect your agent wallet to start buying."}
+                {w ? `Selected ${pickedList.length} · about ${usdc(pickedCost.toString(), 2)} USDC` : "Connect your agent wallet to start buying."}
               </p>
-              <RailToggle rail={rail} onChange={setRail} rails={rails} />
             </div>
             <button
               onClick={() => runAgent(pickedList)}
@@ -430,7 +400,7 @@ function Txn({ s, from, merchant }: { s: Settlement; from: string; merchant?: Me
   const failed = s.status === "failed";
   const steps: { label: string; done: boolean; detail: React.ReactNode }[] = [
     {
-      label: `Paid on ${RAIL_NAME[railOf(s)]}`,
+      label: "Paid on Hedera",
       done: true,
       detail: isSimTx(s.hederaTxId) ? (
         <MockTag>simulated</MockTag>
@@ -440,7 +410,7 @@ function Txn({ s, from, merchant }: { s: Settlement; from: string; merchant?: Me
         </a>
       ),
     },
-    { label: "Verified on chain", done: !!s.chainVerified, detail: s.chainVerified ? (railOf(s) === "whitechain" ? "Whitechain: USDT landed" : "Mirror Node: USDC landed") : s.status === "received" ? "checking…" : "skipped" },
+    { label: "Verified on chain", done: !!s.chainVerified, detail: s.chainVerified ? "Mirror Node: USDC landed" : s.status === "received" ? "checking…" : "skipped" },
     {
       label: "0G decision",
       done: !!s.decision,
@@ -449,10 +419,10 @@ function Txn({ s, from, merchant }: { s: Settlement; from: string; merchant?: Me
     {
       label: "UPI payout",
       done: s.status === "paid",
-      detail: s.status === "paid" ? <>{rupees(s.payoutPaise ?? 0)} · <span className="mono">{s.payoutRef}</span>{s.payoutMode === "mock" && <MockTag>mock</MockTag>}</> : s.status === "held" ? `held, ${tokenOf(s)} refund ${railOf(s) === "whitechain" ? "sent" : "scheduled"}` : "…",
+      detail: s.status === "paid" ? <>{rupees(s.payoutPaise ?? 0)} · <span className="mono">{s.payoutRef}</span>{s.payoutMode === "mock" && <MockTag>mock</MockTag>}</> : s.status === "held" ? `held, USDC refund scheduled` : "…",
     },
     {
-      label: railOf(s) === "whitechain" ? "On-chain receipt" : "HCS receipt",
+      label: "HCS receipt",
       done: s.hcsSequence !== null,
       detail: (() => {
         const r = receiptLink(s);

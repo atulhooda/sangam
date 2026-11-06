@@ -1,9 +1,11 @@
+import type { PaymentRequirements } from "@x402/core/types";
 import { envOr } from "@sangam/shared";
+import { HEDERA_NETWORK } from "@sangam/hedera";
 import { UntrustedPayeeError, assertFairInvoice, assertVerifiedPayee, resolveMerchant } from "@sangam/ens";
 
 import { BadBuyUrlError, assertUrlMerchantOrigin, parseAgentUrl } from "@/lib/server/buy-url";
-import { agentSigningKey, buyerBudgetAtomic, buyerWhitechainAddress, buyerWhitechainKey, requireBuyer, spentByWallet } from "@/lib/server/buyer";
-import { createAgentBuyer, explorerUrl, parseRail, pickQuote } from "@/lib/server/rails";
+import { agentSigningKey, buyerBudgetAtomic, requireBuyer, spentByWallet } from "@/lib/server/buyer";
+import { createAgentBuyer, explorerUrl } from "@/lib/server/rails";
 import { merchantEnsName, ondcGatewayName } from "@/lib/server/merchant";
 import { findByTx } from "@/lib/server/store";
 import type { Invoice } from "@/lib/types";
@@ -17,8 +19,7 @@ export const maxDuration = 60;
  *   2. read the 402 invoice; check it fits the buyer's budget and balance
  *   3. verified-merchants-only check: the invoice must pay the account in the
  *      merchant's ENS record, and the record must say sangam.status=verified
- *   4. sign the transfer from the buyer's own agent wallet and retry: USDC on
- *      Hedera, or USDT on Whitechain (rail: "whitechain"), gasless either way
+ *   4. sign the USDC transfer from the buyer's own agent wallet and retry
  * The merchant's paywall then notifies Sangam, which checks the chain, decides
  * with 0G, pays the merchant out on UPI and writes the HCS receipt.
  */
@@ -28,14 +29,10 @@ export async function POST(req: Request) {
   const wallet = me.identity.wallet;
   if (!wallet) return Response.json({ error: "Connect your agent wallet first." }, { status: 400 });
 
-  const body = (await req.json().catch(() => ({}))) as { ensName?: string; url?: string; rail?: string };
-  const rail = parseRail(body.rail) ?? "hedera";
-  const wcAddress = buyerWhitechainAddress(me.identity.nullifier);
+  const body = (await req.json().catch(() => ({}))) as { ensName?: string; url?: string };
   const agent = (guard?: Parameters<typeof createAgentBuyer>[0]["guard"]) =>
     createAgentBuyer({
-      rail,
       hedera: { accountId: wallet.accountId, privateKey: agentSigningKey() },
-      whitechainKey: wcAddress ? buyerWhitechainKey(me.identity.nullifier) : undefined,
       maxPerPayment: envOr("CUSTOMER_MAX_PER_PAYMENT", "$1"),
       guard,
     });
@@ -72,14 +69,14 @@ export async function POST(req: Request) {
     const probe = await fetch(url, { cache: "no-store" });
     const header = probe.headers.get("PAYMENT-REQUIRED");
     if (probe.status !== 402 || !header) throw new Error(`expected a 402 invoice from ${target}, got ${probe.status}`);
-    const option = pickQuote((JSON.parse(Buffer.from(header, "base64").toString("utf8")) as Invoice).accepts as never, rail, agent().payable);
+    const option = ((JSON.parse(Buffer.from(header, "base64").toString("utf8")) as Invoice).accepts as never as PaymentRequirements[]).find((a) => a.network === HEDERA_NETWORK);
     const price = BigInt(option?.amount ?? "0");
     // Who to pay and how much come from ENS; refuse a dishonest invoice before anything else.
     const guard = ensName === ondcGatewayName() ? assertVerifiedPayee : assertFairInvoice;
     if (option) await guard(option);
     if (ensName === null && option) await assertUrlMerchantOrigin(url, option);
 
-    const spent = spentByWallet(wallet.accountId, wcAddress);
+    const spent = spentByWallet(wallet.accountId);
     const limit = buyerBudgetAtomic();
     if (spent + price > limit) {
       return Response.json({ error: `Over your agent's budget: spent ${spent} of ${limit} (atomic USDC), this costs ${price}.` }, { status: 429 });
@@ -97,7 +94,6 @@ export async function POST(req: Request) {
       url: ensName === null ? url.toString() : undefined,
       priceAtomic: purchase.price,
       hederaTxId: tx,
-      rail: purchase.rail,
       hashscan: explorerUrl(tx),
       explorer: explorerUrl(tx),
       payTo: (purchase.payee as { payTo?: string } | undefined)?.payTo ?? null,

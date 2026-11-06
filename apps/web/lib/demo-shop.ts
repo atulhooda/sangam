@@ -2,9 +2,6 @@
 
 /** The Hedera account the "hacker" would like the money sent to. */
 export const HACKER_ACCOUNT = "0.0.6666666";
-/** The attacker's address on Whitechain, for the hacked invoice's USDT line. */
-export const HACKER_EVM_ADDRESS = "0x000000000000000000000000000000000000dEaD";
-
 /** How much the hacked backend multiplies the real price by. */
 export const OVERCHARGE_FACTOR = 10n;
 

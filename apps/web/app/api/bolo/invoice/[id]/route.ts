@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /*
  * The Bolo invoice's own x402 paywall. Same two rails as the merchant's shop
- * (Hedera USDC + Whitechain USDT), but priced from what the merchant SAID,
+ * (Hedera USDC), but priced from what the merchant SAID,
  * not the ENS list price. The buyer agent treats it like any other merchant
  * endpoint: the 402 names the ENS record, so the usual trust checks apply —
  * and once the facilitator settles, notifyIfSettled hands the payment to the

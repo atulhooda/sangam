@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /*
  * The merchant's paywalled endpoint, behind x402 on two rails (Hedera USDC
- * and Whitechain USDT; the buyer's agent picks one):
+ * and the buyer's agent signs it):
  *   unpaid      → 402 with the invoice in the PAYMENT-REQUIRED header
  *   paid        → the facilitator verifies and settles the signed USDC
  *                 transfer, the merchant returns the ticket with a

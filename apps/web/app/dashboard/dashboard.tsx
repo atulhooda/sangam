@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { EnsView, Invoice, Quote, ReceiptChain, Settlement, Stats } from "@/lib/types";
 import { AgentRunOverlay, runPayAsAgent, useAgentRun, type RunOutcome } from "../components/agent-run";
-import { Card, CardHead, LedgerRow, MockTag, RailBadge, RailToggle, Spinner, StatusPill, useRail } from "../components/ui";
+import { Card, CardHead, LedgerRow, MockTag, RailBadge, Spinner, StatusPill } from "../components/ui";
 import { Logo } from "../components/space/kit";
 import { AccountMenu } from "../components/account-menu";
-import { RAIL_NAME, WHITECHAIN_EXPLORER, clock, explorerName, explorerTx, hashscanTopic, isInFlight, isSimTx, railOf, receiptLink, refundUrl, rupees, shortHash, shortId, shortTx, timeAgo, tokenOf, usdc } from "./format";
+import { RAIL_NAME, clock, explorerName, explorerTx, hashscanTopic, isInFlight, isSimTx, railOf, receiptLink, refundUrl, rupees, shortHash, shortId, shortTx, timeAgo, tokenOf, usdc } from "./format";
 import { UrlBuyCard } from "./url-buy-card";
 
 /* ───────────────────────── data ───────────────────────── */
@@ -393,9 +393,7 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
                 {isSimTx(s.hederaTxId)
                   ? "simulated"
                   : s.chainVerified
-                    ? railOf(s) === "whitechain"
-                      ? "USDT Transfer log ✓"
-                      : "Mirror Node ✓"
+                    ? "Mirror Node ✓"
                     : s.status === "received"
                       ? "—"
                       : "skipped"}
@@ -405,18 +403,14 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
           <LedgerRow k="Payer" v={<span className="mono text-xs" title={s.payer ?? ""}>{s.payer ? shortTx(s.payer) : "—"}</span>} />
           {s.refund && (
             <LedgerRow
-              k={railOf(s) === "whitechain" ? "Refund" : "Scheduled refund"}
+              k="Scheduled refund"
               v={
                 <a
                   className="mono text-xs text-warn underline-offset-2 hover:underline"
                   href={refundUrl(s.refund)}
                   target="_blank"
                   rel="noreferrer"
-                  title={
-                    railOf(s) === "whitechain"
-                      ? "USDT back to the payer, signed by the deposit address, gas paid by Sangam's relayer"
-                      : "USDC back to the payer once the treasury's signature lands"
-                  }
+                  title="USDC back to the payer once the treasury's signature lands"
                 >
                   {s.refund.scheduleId || shortTx(s.refund.transactionId)} · {usdc(s.refund.amountAtomic)} {tokenOf(s)} ↗
                 </a>
@@ -435,7 +429,7 @@ function PaymentDetail({ s, pinned, onFollow, now }: { s: Settlement; pinned: bo
             </>
           )}
           <LedgerRow
-            k={railOf(s) === "whitechain" ? "On-chain receipt" : "HCS receipt"}
+            k="HCS receipt"
             v={(() => {
               const r = receiptLink(s);
               return r ? (
@@ -468,10 +462,6 @@ function TryCard({
   const [agentMsg, setAgentMsg] = useState<{ ok: boolean; text: string; href?: string; refused?: boolean } | null>(null);
   const canSim = stats?.actions.simulate ?? false;
   const canPay = stats?.actions.payAsAgent ?? false;
-  const [railPref, setRail] = useRail();
-  // Only offer Whitechain when this server has it on.
-  const rail = stats?.rails?.includes(railPref) ? railPref : "hedera";
-  const token = rail === "whitechain" ? "USDT" : "USDC";
 
   async function send(short: boolean) {
     setBusy(short ? "short" : "ok");
@@ -499,7 +489,7 @@ function TryCard({
             ? { title: "Buying from the hacked bakery", target: "bakery.sangam.eth · backend hacked" }
             : { title: "Buying a rail ticket", target: "tickets.sangam.eth" };
     // ONDC orders are paid to Sangam's Hedera treasury, so they always go over Hedera.
-    const requestBody = kind === "ondc" ? { kind, q: "atta", qty: 1 } : kind === "hacked" ? { kind, attack: "overcharge", rail } : { kind, rail };
+    const requestBody = kind === "ondc" ? { kind, q: "atta", qty: 1 } : kind === "hacked" ? { kind, attack: "overcharge" } : { kind };
     try {
       const { verdict, body: data } = await runPayAsAgent(run, cfg, requestBody, "/api/pay");
       if (verdict.kind === "refused") {
@@ -546,12 +536,6 @@ function TryCard({
     <Card>
       <CardHead title="Send a payment" hint="An agent pays tickets.sangam.eth. Watch it settle." />
       <div className="space-y-2.5 p-5">
-        {(stats?.rails?.length ?? 0) > 1 && (
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs text-muted">Agent pays on</span>
-            <RailToggle rail={rail} onChange={setRail} rails={stats?.rails} />
-          </div>
-        )}
         {stats?.budget && (
           <div className="rounded-xl border border-line bg-surface2 px-4 py-3" title="CUSTOMER_TOTAL_BUDGET: the agent's cumulative USDC cap">
             <div className="flex items-baseline justify-between gap-3 text-xs">
@@ -580,9 +564,7 @@ function TryCard({
             Pay as agent
             <span className="block text-xs font-normal opacity-80">
               {canPay
-                ? rail === "whitechain"
-                  ? "Real testnet USDT on Whitechain over x402: signature only, Sangam pays the gas"
-                  : "Real testnet USDC over x402, no approval step"
+                ? "Real testnet USDC over x402, no approval step"
                 : "Needs a funded customer account in .env"}
             </span>
           </span>
@@ -802,35 +784,6 @@ function MerchantCard({
 
 /* ───────────────────────── receipt chain ───────────────────────── */
 
-/** The Whitechain rail: the receipts contract and its chain tip, read from the chain. */
-function WhitechainCard({ stats }: { stats: Stats | null }) {
-  const wc = stats?.whitechain;
-  if (!wc) return null;
-  const link = (href: string, text: string, title?: string) => (
-    <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={href} target="_blank" rel="noreferrer" title={title}>
-      {text} ↗
-    </a>
-  );
-  return (
-    <Card>
-      <CardHead
-        title="Whitechain rail"
-        hint="USDT on Whitechain Sepolia. Payers sign; Sangam's relayer pays the gas. Receipts are hash-chained in a contract."
-      />
-      <div className="px-5 py-3">
-        <LedgerRow
-          k="Receipts contract"
-          v={wc.receiptsContract ? link(`${WHITECHAIN_EXPLORER}/address/${wc.receiptsContract}?tab=contract`, shortTx(wc.receiptsContract), wc.receiptsContract) : <span className="text-xs text-muted">not deployed</span>}
-        />
-        <LedgerRow k="Receipts" v={<span className="tabular-nums">{wc.receiptsCount ?? "—"}</span>} />
-        <LedgerRow k="Head hash" v={<span className="mono text-[10.5px]" title={wc.receiptsHead ?? ""}>{wc.receiptsHead ? shortHash(wc.receiptsHead) : "—"}</span>} />
-        <LedgerRow k="Relayer (pays gas)" v={link(`${WHITECHAIN_EXPLORER}/address/${wc.relayer}`, shortTx(wc.relayer), wc.relayer)} />
-        {wc.customerAddress && <LedgerRow k="Agent address" v={link(`${WHITECHAIN_EXPLORER}/address/${wc.customerAddress}`, shortTx(wc.customerAddress), wc.customerAddress)} />}
-      </div>
-    </Card>
-  );
-}
-
 function ReceiptChainCard() {
   const [chain, setChain] = useState<ReceiptChain | null>(null);
   useEffect(() => {
@@ -1034,7 +987,6 @@ export function Dashboard() {
               }}
             />
             <ReceiptChainCard />
-            <WhitechainCard stats={stats} />
             <InvoiceCard invoice={invoice} />
             <MerchantCard quote={quote} ens={ens} verified={merchantVerified} />
           </div>

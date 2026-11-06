@@ -113,7 +113,7 @@ export function ProofRows({ s }: { s: Settlement }) {
       />
       {s.refund && (
         <LedgerRow
-          k={rail === "whitechain" ? "Refund" : "Scheduled refund"}
+          k="Scheduled refund"
           v={
             <a className="mono text-xs text-warn underline-offset-2 hover:underline" href={refundUrl(s.refund)} target="_blank" rel="noreferrer">
               {s.refund.scheduleId || shortTx(s.refund.transactionId)} · {usdc(s.refund.amountAtomic)} {tokenOf(s)} ↗
@@ -122,7 +122,7 @@ export function ProofRows({ s }: { s: Settlement }) {
         />
       )}
       <LedgerRow
-        k={rail === "whitechain" ? "On-chain receipt" : "HCS receipt"}
+        k="HCS receipt"
         v={
           receipt ? (
             <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={receipt.href} target="_blank" rel="noreferrer">
@@ -137,15 +137,11 @@ export function ProofRows({ s }: { s: Settlement }) {
   );
 }
 
-/** A small "Hedera" / "Whitechain" chip for a settlement row. */
-export function RailBadge({ s }: { s: Pick<Settlement, "rail" | "hederaTxId"> }) {
-  const rail = railOf(s);
+/** A small "Hedera" chip for a settlement row. */
+export function RailBadge({ s }: { s: Pick<Settlement, "hederaTxId"> }) {
   return (
-    <span
-      className={`mono rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${rail === "whitechain" ? "bg-infobg text-info" : "bg-okbg text-ok"}`}
-      title={rail === "whitechain" ? "Paid in USDT on Whitechain" : "Paid in USDC on Hedera"}
-    >
-      {RAIL_NAME[rail]}
+    <span className="mono rounded bg-okbg px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-ok" title="Paid in USDC on Hedera">
+      {RAIL_NAME[railOf(s)]}
     </span>
   );
 }
@@ -165,7 +161,7 @@ export function RailToggle({ rail, onChange, rails }: { rail: Rail; onChange: (r
           onClick={() => onChange(r)}
           className={`rounded-full px-3 py-1 transition-colors ${rail === r ? "bg-accent text-bg" : "text-muted hover:text-ink"}`}
         >
-          {RAIL_NAME[r]} · {r === "whitechain" ? "USDT" : "USDC"}
+          {RAIL_NAME[r]} · USDC
         </button>
       ))}
     </div>
@@ -180,7 +176,7 @@ export function useRail(): [Rail, (r: Rail) => void] {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(RAIL_KEY);
-      if (saved === "hedera" || saved === "whitechain") setRail(saved);
+      if (saved === "hedera") setRail(saved);
     } catch {
       /* storage blocked: keep the default */
     }

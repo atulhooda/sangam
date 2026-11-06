@@ -5,7 +5,7 @@ import { normalize, packetToBytes } from "viem/ens";
 import { REPO_ROOT, flag, type MerchantRecord } from "@sangam/shared";
 import { sepoliaClient } from "./client.ts";
 import { ENSV2_SEPOLIA, REGISTRY_ABI, REGISTRY_ROLES, RESOLVER_ABI } from "./contracts.ts";
-import { MERCHANT_FIELDS, MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY, WHITECHAIN_PAYTO_KEY, type MerchantStatus } from "./records.ts";
+import { MERCHANT_FIELDS, MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY, type MerchantStatus } from "./records.ts";
 import { forgetMerchant } from "./resolve.ts";
 import { parentName, sangamContracts, sangamWallet } from "./wallet.ts";
 
@@ -20,9 +20,7 @@ import { parentName, sangamContracts, sangamWallet } from "./wallet.ts";
  * the name to the merchant later if the merchant wants custody.
  */
 
-export type MerchantInput = Omit<MerchantRecord, "ensName" | "priceInrPaise" | "status" | "whitechainPayTo"> & {
-  /** Written as sangam.payTo.whitechain when given; left untouched otherwise. */
-  whitechainPayTo?: string;
+export type MerchantInput = Omit<MerchantRecord, "ensName" | "priceInrPaise" | "status"> & {
   priceInrPaise: number | string;
   /** Written as sangam.status when given; left untouched otherwise. */
   status?: MerchantStatus;
@@ -67,7 +65,6 @@ export async function issueSubname(label: string, merchant: MerchantInput, log: 
     all[name] = {
       ...values,
       ...(merchant.status ? { status: merchant.status } : {}),
-      ...(merchant.whitechainPayTo ? { whitechainPayTo: merchant.whitechainPayTo } : all[name]?.whitechainPayTo ? { whitechainPayTo: all[name]!.whitechainPayTo! } : {}),
     };
     writeFileSync(file, `${JSON.stringify(all, null, 2)}\n`);
     forgetMerchant(name);
@@ -116,9 +113,6 @@ export async function issueSubname(label: string, merchant: MerchantInput, log: 
   );
   if (merchant.status) {
     calls.push(encodeFunctionData({ abi: RESOLVER_ABI, functionName: "setText", args: [dnsName, STATUS_TEXT_KEY, merchant.status] }));
-  }
-  if (merchant.whitechainPayTo) {
-    calls.push(encodeFunctionData({ abi: RESOLVER_ABI, functionName: "setText", args: [dnsName, WHITECHAIN_PAYTO_KEY, merchant.whitechainPayTo] }));
   }
   log(`writing ${calls.length} records on ${name}…`);
   const tx = await wallet.writeContract({ address: resolver, abi: RESOLVER_ABI, functionName: "multicall", args: [calls] });

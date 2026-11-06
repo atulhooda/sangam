@@ -1,4 +1,6 @@
+import type { PaymentRequirements } from "@x402/core/types";
 import { UntrustedPayeeError, assertFairInvoice, assertVerifiedPayee, resolveMerchant } from "@sangam/ens";
+import { HEDERA_NETWORK } from "@sangam/hedera";
 import { env, envOr } from "@sangam/shared";
 import { assertBudgetAllows, BudgetExceededError, budgetSnapshot, recordBudgetSpend } from "@/lib/server/budget";
 import { BadBuyUrlError, assertUrlMerchantOrigin, parseAgentUrl } from "@/lib/server/buy-url";
@@ -6,7 +8,7 @@ import { parseAttack } from "@/lib/demo-shop";
 import { merchantEnsName } from "@/lib/server/merchant";
 import { canPayAsAgent } from "@/lib/server/pipeline";
 import { currentUser } from "@/lib/server/session";
-import { createAgentBuyer, explorerUrl, parseRail, pickQuote } from "@/lib/server/rails";
+import { createAgentBuyer, explorerUrl } from "@/lib/server/rails";
 import { findByTx } from "@/lib/server/store";
 import type { Invoice } from "@/lib/types";
 
@@ -32,8 +34,6 @@ export const maxDuration = 60;
  *                       origin check: the page must live on the merchant's
  *                       registered ENS endpoint.
  *
- * `rail` ("hedera" | "whitechain") picks which invoice line the agent pays:
- * USDC on Hedera, or USDT on Whitechain, signed with the same CUSTOMER key.
  *
  * The agent only pays verified Sangam merchants: before signing, every
  * invoice is checked against the merchant's ENS record: who to pay
@@ -55,16 +55,11 @@ export async function POST(req: Request) {
     q?: string;
     qty?: number;
     url?: string;
-    rail?: string;
     product?: string;
   };
-  const rail = parseRail(body.rail) ?? "hedera";
-  const customerKey = env("CUSTOMER_PRIVATE_KEY");
   const agent = (guard?: Parameters<typeof createAgentBuyer>[0]["guard"]) =>
     createAgentBuyer({
-      rail,
-      hedera: { accountId: env("CUSTOMER_ACCOUNT_ID"), privateKey: customerKey },
-      whitechainKey: (customerKey.startsWith("0x") ? customerKey : `0x${customerKey}`) as `0x${string}`,
+      hedera: { accountId: env("CUSTOMER_ACCOUNT_ID"), privateKey: env("CUSTOMER_PRIVATE_KEY") },
       maxPerPayment: envOr("CUSTOMER_MAX_PER_PAYMENT", "$1"),
       guard,
     });
@@ -124,7 +119,7 @@ export async function POST(req: Request) {
       }
       throw new Error(`expected 402 from merchant, got ${probe.status}`);
     }
-    const option = pickQuote((JSON.parse(atob(probeHeader)) as Invoice).accepts as never, rail, agent().payable);
+    const option = ((JSON.parse(atob(probeHeader)) as Invoice).accepts as never as PaymentRequirements[]).find((a) => a.network === HEDERA_NETWORK);
     if (!option?.amount) throw new Error("merchant returned no payment options");
     // ENS first: a dishonest invoice is refused for what it is, whatever the budget.
     const guard = body.kind === "ondc" ? assertVerifiedPayee : assertFairInvoice;
@@ -146,8 +141,6 @@ export async function POST(req: Request) {
       result: purchase.body,
       ticket: body.kind === "ondc" ? undefined : purchase.body,
       hederaTxId: tx,
-      rail: purchase.rail,
-      // Kept as "hashscan" for older clients; it is the explorer for the rail paid on.
       hashscan: explorerUrl(tx),
       explorer: explorerUrl(tx),
       priceAtomic: purchase.price,

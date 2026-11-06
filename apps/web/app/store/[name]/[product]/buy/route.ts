@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  * This is the url in the product's own ENS name. The invoice names the
  * product's ENS name, so an agent checks the bill against the product's price
  * and the shop's payout accounts in ENS before it signs. Pays on Hedera (USDC)
- * or Whitechain (USDT); the settlement is booked to the shop, tagged with the
+ * ; the settlement is booked to the shop, tagged with the
  * product.
  */
 

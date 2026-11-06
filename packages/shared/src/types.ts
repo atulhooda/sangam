@@ -6,8 +6,6 @@ export type MerchantRecord = {
   endpoint: string;
   hederaPayTo: string;
   network: string;
-  /** sangam.payTo.whitechain: the merchant's USDT deposit address on Whitechain, when it accepts that rail. */
-  whitechainPayTo?: string;
   upiHandle: string;
   priceInrPaise: number;
   /**
@@ -22,20 +20,15 @@ export type SettlementStatus = "received" | "confirmed" | "decided" | "paid" | "
 
 export type PayoutMode = "mock" | "razorpayx-test";
 
-/** Which chain a payment settled on. Rows from before Whitechain have no rail: they are Hedera. */
-export type Rail = "hedera" | "whitechain";
-
 export type Settlement = {
   /** How Sangam learned of the payment: the merchant's x402 notice, or USDC seen landing in its deposit account. */
   source?: "x402" | "transfer";
-  /** Hedera (USDC) or Whitechain (USDT). Missing on older rows: Hedera. */
-  rail?: Rail;
   id: string;
   merchant: string;
-  /** The payment transaction: a Hedera transaction id, or a Whitechain tx hash (0x…) when rail is "whitechain". */
+  /** The payment transaction: a Hedera transaction id. */
   hederaTxId: string;
   payer: string | null;
-  /** Atomic stablecoin units (6 decimals: USDC on Hedera, USDT on Whitechain) actually credited. */
+  /** Atomic USDC units (6 decimals) actually credited. */
   usdcAmount: string;
   fxRate: number;
   inrGrossPaise: number;
@@ -52,17 +45,10 @@ export type Settlement = {
   chainVerified?: boolean;
   /** HCS topic the receipt went to, so the dashboard can link it. */
   hcsTopicId?: string | null;
-  /** Whitechain: the SangamReceipts transaction that recorded this settlement (hcsSequence holds its seq). */
-  receiptTx?: string | null;
   /** The price this order was quoted at, when it isn't the merchant's fixed price (ONDC). */
   quotedInrPaise?: number | null;
-  /**
-   * Refund back to the payer, created when the payment is held: a Hedera
-   * scheduled transaction, or a gasless USDT transfer on Whitechain (scheduleId
-   * empty, transactionId the tx hash).
-   */
+  /** Refund back to the payer, created when the payment is held: a Hedera scheduled transaction. */
   refund?: {
-    rail?: Rail;
     scheduleId: string;
     transactionId: string;
     amountAtomic: string;
@@ -90,8 +76,6 @@ export type SettlementNotice = {
   ondc?: OndcOrderInfo;
   /** "x402" (the merchant's notice, the default) or "transfer" (Sangam saw USDC land in the merchant's deposit account). */
   source?: "x402" | "transfer";
-  /** Which chain hederaTxId is on. Inferred from its format when missing. */
-  rail?: Rail;
   /** The storefront product bought, when the sale was one product. */
   product?: { ensName: string; title: string };
 };
@@ -129,16 +113,6 @@ export type Stats = {
   budget?: { limitAtomic: string; spentAtomic: string; remainingAtomic: string } | null;
   /** The buyer agent's Hedera account (CUSTOMER_ACCOUNT_ID), when set. */
   customerAccountId?: string | null;
-  /** The rails payments can settle on right now. */
-  rails?: Rail[];
-  /** The Whitechain rail, when it's on: receipts contract, its chain tip, the relayer and the agent's address. */
-  whitechain?: {
-    receiptsContract: string | null;
-    receiptsCount: number | null;
-    receiptsHead: string | null;
-    relayer: string;
-    customerAddress: string | null;
-  } | null;
 };
 
 export type Quote = {

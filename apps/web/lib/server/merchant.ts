@@ -43,13 +43,12 @@ export async function notifyIfSettled(res: Response, merchant: string, tag = "me
   if (!settle.success || !settle.transaction) return;
   console.log(`[${tag}] ${merchant} settled ${settle.transaction}`);
   // amount may be absent: Sangam's chain check records what actually landed.
-  const rail = settle.network === "eip155:1874" ? "whitechain" : "hedera";
   // A storefront product is priced in its own ENS name: that's the quote the decision checks against.
   let quotedInrPaise = extra.quotedInrPaise;
   if (extra.product && quotedInrPaise === undefined) {
     quotedInrPaise = await resolveMerchant(extra.product.ensName).then((r) => r.priceInrPaise).catch(() => undefined);
   }
-  await notifySangam({ merchant, hederaTxId: settle.transaction, payer: settle.payer, usdcAmount: settle.amount ?? "0", rail, ...extra, ...(quotedInrPaise ? { quotedInrPaise } : {}) }, tag);
+  await notifySangam({ merchant, hederaTxId: settle.transaction, payer: settle.payer, usdcAmount: settle.amount ?? "0", ...extra, ...(quotedInrPaise ? { quotedInrPaise } : {}) }, tag);
 }
 
 /**

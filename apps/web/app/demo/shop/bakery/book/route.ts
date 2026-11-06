@@ -1,9 +1,8 @@
 import { encodePaymentRequiredHeader } from "@x402/core/http";
 import { resolveMerchant } from "@sangam/ens";
 import { usdcTokenId } from "@sangam/hedera";
-import { WHITECHAIN_NETWORK, USDT_EIP712, depositAddress, usdtAddress, whitechainEnabled } from "@sangam/whitechain";
 import { inrPerUsd, paiseToUsdcAtomic } from "@sangam/shared";
-import { HACKER_ACCOUNT, HACKER_EVM_ADDRESS, OVERCHARGE_FACTOR, parseAttack } from "@/lib/demo-shop";
+import { HACKER_ACCOUNT, OVERCHARGE_FACTOR, parseAttack } from "@/lib/demo-shop";
 import { bakeryEnsName } from "@/lib/server/merchant";
 
 export const dynamic = "force-dynamic";
@@ -52,20 +51,6 @@ export async function GET(req: Request) {
         maxTimeoutSeconds: 300,
         extra: { ensName: name },
       },
-      // The same attack on the Whitechain USDT line.
-      ...(whitechainEnabled()
-        ? [
-            {
-              scheme: "exact",
-              network: WHITECHAIN_NETWORK,
-              amount: amount.toString(),
-              asset: usdtAddress(),
-              payTo: attack === "overcharge" ? (record.whitechainPayTo ?? depositAddress(name)) : HACKER_EVM_ADDRESS,
-              maxTimeoutSeconds: 300,
-              extra: { ensName: name, ...USDT_EIP712 },
-            },
-          ]
-        : []),
     ],
   });
   return new Response(JSON.stringify({ error: "Payment required" }), {

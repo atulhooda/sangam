@@ -2,7 +2,7 @@ import { encodeAbiParameters, encodeFunctionData, keccak256, labelhash, namehash
 import { normalize, packetToBytes } from "viem/ens";
 import { sepoliaClient } from "./client.ts";
 import { ALL_ROLES, ENSV2_SEPOLIA, FACTORY_ABI, REGISTRY_ABI, REGISTRY_ROLES, RESOLVER_ABI, USER_REGISTRY_INIT_ABI } from "./contracts.ts";
-import { MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY, WHITECHAIN_PAYTO_KEY } from "./records.ts";
+import { MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY } from "./records.ts";
 import { forgetMerchant, resolveMerchant } from "./resolve.ts";
 import { validLabel } from "./subnames.ts";
 import { parentName, sangamContracts, sangamWallet } from "./wallet.ts";
@@ -171,7 +171,6 @@ export async function publishProducts(
       set(MERCHANT_TEXT_KEYS.priceInrPaise, String(p.priceInrPaise)),
       set(MERCHANT_TEXT_KEYS.upiHandle, merchant.upiHandle),
       set(STATUS_TEXT_KEY, "verified"),
-      ...(merchant.whitechainPayTo ? [set(WHITECHAIN_PAYTO_KEY, merchant.whitechainPayTo)] : []),
       set(PRODUCT_TEXT_KEYS.merchant, name),
       set(PRODUCT_TEXT_KEYS.title, p.title),
       set(PRODUCT_TEXT_KEYS.description, p.description ?? ""),

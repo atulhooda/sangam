@@ -88,7 +88,6 @@ export type StoreProduct = {
   priceInrPaise: number;
   priceUsdcAtomic: string;
   buyUrl: string;
-  rails: ("hedera" | "whitechain")[];
 };
 
 export type Storefront = {
@@ -124,7 +123,6 @@ export async function storefront(merchant: string): Promise<Storefront> {
             priceInrPaise: rec.priceInrPaise,
             priceUsdcAtomic: paiseToUsdcAtomic(rec.priceInrPaise, rate).toString(),
             buyUrl: rec.endpoint,
-            rails: rec.whitechainPayTo ? ["hedera", "whitechain"] : ["hedera"],
           };
         } catch (err) {
           errors.push(`${ensName}: ${(err as Error).message.split("\n")[0]}`);

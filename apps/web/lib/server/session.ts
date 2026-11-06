@@ -1,5 +1,4 @@
 import "server-only";
-import { depositAddress, whitechainEnabled } from "@sangam/whitechain";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import type { Me } from "@/lib/types";
@@ -165,7 +164,6 @@ export function publicMe(identity: VerifiedIdentity, switchTo: Role | null = nul
           priceInrPaise: identity.shop.priceInrPaise,
           endpoint: identity.shop.endpoint,
           depositAccountId: identity.shop.depositAccountId ?? null,
-          whitechainDeposit: whitechainEnabled() && identity.shop.provisionedAt ? depositAddress(identity.label) : null,
           publishedUrl: identity.shop.publishedUrl ?? null,
           ensTxs: identity.shop.ensTxs ?? [],
           provisionedAt: identity.shop.provisionedAt ?? null,

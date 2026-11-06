@@ -3,19 +3,16 @@
 import { useState } from "react";
 import type { Storefront, StoreProduct } from "@/lib/server/products";
 import { AgentRunOverlay, runPayAsAgent, useAgentRun } from "../../components/agent-run";
-import { Card, RailToggle, useRail } from "../../components/ui";
+import { Card } from "../../components/ui";
 import { Logo } from "../../components/space/kit";
-import { RAIL_NAME, explorerName, rupees, usdc } from "../../dashboard/format";
+import { explorerName, rupees, usdc } from "../../dashboard/format";
 
 type Outcome = { ok: boolean; refused?: boolean; text: string; href?: string; signIn?: string };
 
 export function StoreView({ merchant, store, error, buyer }: { merchant: string; store: Storefront | null; error: string | null; buyer: boolean }) {
   const agentRun = useAgentRun();
-  const [railPref, setRail] = useRail();
   const [busy, setBusy] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Record<string, Outcome>>({});
-  const rails = [...new Set((store?.products ?? []).flatMap((p) => p.rails))] as ("hedera" | "whitechain")[];
-  const rail = rails.includes(railPref) ? railPref : "hedera";
   const isBakery = merchant.startsWith("bakery.");
 
   async function buy(p: StoreProduct, hacked = false) {
@@ -26,12 +23,12 @@ export function StoreView({ merchant, store, error, buyer }: { merchant: string;
         ? await runPayAsAgent(
             agentRun.run,
             { title: "Buying from a hacked copy of this shop", target: `${p.ensName} · billed 10×` },
-            { kind: "hacked", attack: "overcharge", product: p.label, rail },
+            { kind: "hacked", attack: "overcharge", product: p.label },
             "/api/pay",
           )
-        : await runPayAsAgent(agentRun.run, { title: `Buying with your agent · ${RAIL_NAME[rail]}`, target: p.ensName }, { ensName: p.ensName, rail }, "/api/agent/buy");
+        : await runPayAsAgent(agentRun.run, { title: `Buying with your agent`, target: p.ensName }, { ensName: p.ensName }, "/api/agent/buy");
       let o: Outcome;
-      if (verdict.kind === "paid") o = { ok: true, text: `Paid ${usdc(String(body?.priceAtomic ?? p.priceUsdcAtomic), 2)} ${body?.rail === "whitechain" ? "USDT" : "USDC"}. The shop gets rupees on UPI.`, href: verdict.hashscan };
+      if (verdict.kind === "paid") o = { ok: true, text: `Paid ${usdc(String(body?.priceAtomic ?? p.priceUsdcAtomic), 2)} USDC. The shop gets rupees on UPI.`, href: verdict.hashscan };
       else if (verdict.kind === "refused") o = { ok: true, refused: true, text: `🛡️ Refused, nothing signed. ${verdict.message}` };
       else if (verdict.kind === "soft") o = { ok: false, text: verdict.message, signIn: verdict.signIn };
       else o = { ok: false, text: verdict.message };
@@ -75,7 +72,6 @@ export function StoreView({ merchant, store, error, buyer }: { merchant: string;
                 <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-ok" /> verified shop
               </span>
             )}
-            <RailToggle rail={rail} onChange={setRail} rails={rails} />
           </div>
         </div>
 
@@ -120,7 +116,7 @@ export function StoreView({ merchant, store, error, buyer }: { merchant: string;
                           {p.ensName} ↗
                         </a>
                         <p className="mt-auto text-lg font-semibold tabular-nums">
-                          {rupees(p.priceInrPaise)} <span className="text-xs font-normal text-muted">≈ {usdc(p.priceUsdcAtomic, 2)} {rail === "whitechain" ? "USDT" : "USDC"}</span>
+                          {rupees(p.priceInrPaise)} <span className="text-xs font-normal text-muted">≈ {usdc(p.priceUsdcAtomic, 2)} USDC</span>
                         </p>
                         <div className="flex flex-wrap gap-2">
                           <button

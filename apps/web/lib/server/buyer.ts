@@ -1,6 +1,5 @@
 import "server-only";
 import { env, envOr } from "@sangam/shared";
-import { buyerAddress, buyerKey, whitechainEnabled } from "@sangam/whitechain";
 import { listSettlements } from "./store";
 import { currentUser, type SignedIn } from "./session";
 
@@ -32,18 +31,9 @@ export async function requireBuyer(): Promise<SignedIn | null> {
   return me && me.session.role === "user" ? me : null;
 }
 
-/** What this buyer's agent has spent on either rail: every settlement it paid, except failed ones. */
-export function spentByWallet(accountId: string, whitechainAddress?: string | null): bigint {
-  const wc = whitechainAddress?.toLowerCase();
+/** What this buyer's agent has spent: every settlement it paid, except failed ones. */
+export function spentByWallet(accountId: string): bigint {
   return listSettlements()
-    .filter((s) => (s.payer === accountId || (!!wc && s.payer?.toLowerCase() === wc)) && s.status !== "failed")
+    .filter((s) => s.payer === accountId && s.status !== "failed")
     .reduce((sum, s) => sum + BigInt(s.usdcAmount), 0n);
 }
-
-/**
- * The buyer's agent on Whitechain: an address derived for this buyer (no
- * account to create), holding USDT and no WBT. It signs EIP-3009 transfers;
- * Sangam's relayer submits them and pays the gas.
- */
-export const buyerWhitechainAddress = (buyerId: string) => (whitechainEnabled() ? buyerAddress(buyerId) : null);
-export const buyerWhitechainKey = (buyerId: string) => buyerKey(buyerId);

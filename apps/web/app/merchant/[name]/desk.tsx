@@ -8,7 +8,7 @@ import { AccountMenu } from "../../components/account-menu";
 import { ShopSettings } from "./shop-settings";
 import { BoloPanel } from "./bolo";
 import { ProductsCard } from "./products";
-import { WHITECHAIN_EXPLORER, clock, explorerTx, isSimTx, receiptLink, rupees, timeAgo, usdc } from "../../dashboard/format";
+import { clock, explorerTx, isSimTx, receiptLink, rupees, timeAgo, usdc } from "../../dashboard/format";
 
 /*
  * The merchant desk: everything this merchant cares about, and nothing else.
@@ -170,7 +170,7 @@ export function MerchantDesk({ name, me: initialMe }: { name: string; me: Me }) 
                         )}
                         {receiptLink(s) && (
                           <a className="mono ml-2 text-xs text-accent underline-offset-2 hover:underline" href={receiptLink(s)!.href} target="_blank" rel="noreferrer">
-                            {s.receiptTx ? "receipt" : "HCS"} #{s.hcsSequence}
+                            HCS #{s.hcsSequence}
                           </a>
                         )}
                       </td>
@@ -211,16 +211,6 @@ export function MerchantDesk({ name, me: initialMe }: { name: string; me: Me }) 
                   )
                 }
               />
-              {me.shop.whitechainDeposit && (
-                <LedgerRow
-                  k="Whitechain (USDT)"
-                  v={
-                    <a className="mono text-xs text-accent underline-offset-2 hover:underline" href={`${WHITECHAIN_EXPLORER}/address/${me.shop.whitechainDeposit}`} target="_blank" rel="noreferrer" title={me.shop.whitechainDeposit}>
-                      {me.shop.whitechainDeposit.slice(0, 10)}…{me.shop.whitechainDeposit.slice(-6)} ↗
-                    </a>
-                  }
-                />
-              )}
               <LedgerRow k="Agents buy at" v={<span className="mono block max-w-[260px] truncate text-[11px]" title={me.shop.publishedUrl ?? ""}>{me.shop.publishedUrl ?? "—"}</span>} />
               {me.shop.ensTxs.map((t) => (
                 <LedgerRow
