@@ -107,6 +107,12 @@ npm run whitechain-ens               # publish the demo merchants' Whitechain ad
 
 Feedback on building with Whitechain: [WHITECHAIN_FEEDBACK.md](WHITECHAIN_FEEDBACK.md).
 
+## Storefronts: every product has its own ENS name
+
+A verified merchant uploads its catalogue (CSV: `name, price_inr, description, image_url`) on its desk. Sangam gives each product its own ENS name under the shop's, like `chocolate-truffle-cake.bakery.sangam.eth`, holding the product's price and the shop's payout accounts, and lists them on the shop's name (`sangam.products`). The storefront at `/store/<shop>` is rebuilt from ENS alone, and each product has its own x402 endpoint on both rails.
+
+Agents check a product invoice against the product's ENS name and its shop's: the shop must still be verified, the product must pay the shop's own accounts, and the bill can't exceed the product's ENS price. A hacked copy of the shop that bills 10× for one product is refused before anything is signed.
+
 ## Agent spending controls
 
 | Control | Env var | What it does |

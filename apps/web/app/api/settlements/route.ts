@@ -26,6 +26,7 @@ const NoticeSchema = z.object({
   payer: z.string().optional(),
   usdcAmount: z.string().regex(/^\d+$/),
   rail: z.enum(["hedera", "whitechain"]).optional(),
+  product: z.object({ ensName: z.string().min(3).max(255), title: z.string().max(120) }).optional(),
   quotedInrPaise: z.number().int().positive().optional(),
   ondc: z
     .object({

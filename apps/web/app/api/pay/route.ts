@@ -56,6 +56,7 @@ export async function POST(req: Request) {
     qty?: number;
     url?: string;
     rail?: string;
+    product?: string;
   };
   const rail = parseRail(body.rail) ?? "hedera";
   const customerKey = env("CUSTOMER_PRIVATE_KEY");
@@ -76,6 +77,8 @@ export async function POST(req: Request) {
     what = "a ticket from a fake IRCTC site";
   } else if (body.kind === "hacked") {
     url = new URL(`${origin}/demo/shop/bakery/book?attack=${parseAttack(body.attack)}`);
+    // One storefront product instead of the whole shop (its own ENS name and price).
+    if (typeof body.product === "string" && /^[a-z0-9-]{3,63}$/.test(body.product)) url.searchParams.set("product", body.product);
     what = "a cake from the hacked bakery";
   } else if (body.kind === "url") {
     const raw = (body.url ?? "").trim();

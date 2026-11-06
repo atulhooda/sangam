@@ -7,6 +7,7 @@ import { Logo } from "../../components/space/kit";
 import { AccountMenu } from "../../components/account-menu";
 import { ShopSettings } from "./shop-settings";
 import { BoloPanel } from "./bolo";
+import { ProductsCard } from "./products";
 import { WHITECHAIN_EXPLORER, clock, explorerTx, isSimTx, receiptLink, rupees, timeAgo, usdc } from "../../dashboard/format";
 
 /*
@@ -248,6 +249,8 @@ export function MerchantDesk({ name, me: initialMe }: { name: string; me: Me }) 
             )}
           </Card>
         )}
+
+        {me.shop?.provisionedAt && <ProductsCard merchant={name} />}
 
         {me.cert && (
           <Card>

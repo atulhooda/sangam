@@ -77,6 +77,7 @@ export async function acceptNotice(notice: SettlementNotice): Promise<Settlement
     hcsTopicId: null,
     quotedInrPaise: notice.quotedInrPaise ?? null,
     ondc: notice.ondc ?? null,
+    product: notice.product ?? null,
     source: notice.source ?? "x402",
     rail: railOf(notice),
     status: "received",

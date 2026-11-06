@@ -1,6 +1,7 @@
 import "server-only";
 import { randomInt } from "node:crypto";
 import { decodePaymentResponseHeader } from "@x402/core/http";
+import { resolveMerchant } from "@sangam/ens";
 import { env, envOr, type SettlementNotice } from "@sangam/shared";
 
 /*
@@ -35,7 +36,7 @@ export const ondcGatewayName = () => envOr("ONDC_GATEWAY_ENS", `ondc.${envOr("EN
  * exists before the buyer gets its goods. One place for every paywall,
  * instead of a separate onAfterSettle hook per resource server.
  */
-export async function notifyIfSettled(res: Response, merchant: string, tag = "merchant"): Promise<void> {
+export async function notifyIfSettled(res: Response, merchant: string, tag = "merchant", extra: Partial<SettlementNotice> = {}): Promise<void> {
   const header = res.headers.get("PAYMENT-RESPONSE");
   if (res.status >= 400 || !header) return;
   const settle = decodePaymentResponseHeader(header);
@@ -43,7 +44,12 @@ export async function notifyIfSettled(res: Response, merchant: string, tag = "me
   console.log(`[${tag}] ${merchant} settled ${settle.transaction}`);
   // amount may be absent: Sangam's chain check records what actually landed.
   const rail = settle.network === "eip155:1874" ? "whitechain" : "hedera";
-  await notifySangam({ merchant, hederaTxId: settle.transaction, payer: settle.payer, usdcAmount: settle.amount ?? "0", rail }, tag);
+  // A storefront product is priced in its own ENS name: that's the quote the decision checks against.
+  let quotedInrPaise = extra.quotedInrPaise;
+  if (extra.product && quotedInrPaise === undefined) {
+    quotedInrPaise = await resolveMerchant(extra.product.ensName).then((r) => r.priceInrPaise).catch(() => undefined);
+  }
+  await notifySangam({ merchant, hederaTxId: settle.transaction, payer: settle.payer, usdcAmount: settle.amount ?? "0", rail, ...extra, ...(quotedInrPaise ? { quotedInrPaise } : {}) }, tag);
 }
 
 /**

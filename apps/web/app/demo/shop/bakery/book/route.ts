@@ -23,8 +23,11 @@ export const dynamic = "force-dynamic";
  */
 
 export async function GET(req: Request) {
-  const attack = parseAttack(new URL(req.url).searchParams.get("attack"));
-  const name = bakeryEnsName();
+  const params = new URL(req.url).searchParams;
+  const attack = parseAttack(params.get("attack"));
+  // ?product=<label>: the same attack on one storefront product (its own ENS name and price).
+  const product = (params.get("product") ?? "").trim().toLowerCase();
+  const name = product && /^[a-z0-9-]{3,63}$/.test(product) ? `${product}.${bakeryEnsName()}` : bakeryEnsName();
   let record;
   try {
     record = await resolveMerchant(name);
@@ -38,7 +41,7 @@ export async function GET(req: Request) {
   const header = encodePaymentRequiredHeader({
     x402Version: 2,
     error: "Payment required",
-    resource: { url: req.url, description: `Chocolate truffle cake from ${name}, ₹${record.priceInrPaise / 100}`, mimeType: "application/json" },
+    resource: { url: req.url, description: `${product ? name : `Chocolate truffle cake from ${name}`}, ₹${record.priceInrPaise / 100}`, mimeType: "application/json" },
     accepts: [
       {
         scheme: "exact",
