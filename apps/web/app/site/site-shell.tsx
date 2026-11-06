@@ -11,7 +11,7 @@ import type { ShopEns } from "../demo/shops/shop-window";
 export function SiteShell({ shop, ens, menu, tagline, children }: { shop: ShopDef; ens: ShopEns; menu: string[]; tagline: string; children: ReactNode }) {
   const bakery = shop.id === "bakery";
   return (
-    <div className="relative min-h-screen">
+    <div className="dark relative min-h-screen">
       <div
         aria-hidden
         className={`pointer-events-none absolute inset-0 -z-10 ${

@@ -36,7 +36,7 @@ function AgentCard() {
         River one · USDC on Hedera
       </p>
       <h3 className="mb-4 text-xl font-semibold tracking-tight">An agent with money</h3>
-      <div className="overflow-hidden rounded-xl border border-[#23264a] bg-[#0b0d1a] shadow-sm">
+      <div className="dark overflow-hidden rounded-xl border border-[#23264a] bg-[#0b0d1a] shadow-sm">
         <div className="flex items-center gap-1.5 border-b border-[#23264a] px-3 py-2">
           <span className="h-2 w-2 rounded-full bg-[#f08a80]" />
           <span className="h-2 w-2 rounded-full bg-[#f0c062]" />
@@ -192,7 +192,7 @@ export function TwoWorlds() {
           <ol className="space-y-5">
             {NEW_WAY.map((s, i) => (
               <li key={s.step} className="flex gap-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-[#0b0b14]">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-white dark:text-[#0b0b14]">
                   {i + 1}
                 </span>
                 <p>

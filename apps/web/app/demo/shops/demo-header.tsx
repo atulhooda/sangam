@@ -12,7 +12,7 @@ export function DemoHeader({ title }: { title: string }) {
         </div>
         <nav className="flex shrink-0 items-center gap-2 text-sm">
           <Link href="/demo/shops" className="hidden rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-muted transition-colors hover:text-ink sm:block">Side by side</Link>
-          <Link href="/dashboard" className="rounded-full bg-white px-3.5 py-1.5 font-medium text-[#0b0b14]">Settlement desk</Link>
+          <Link href="/dashboard" className="rounded-full bg-white px-3.5 py-1.5 font-medium text-black">Settlement desk</Link>
         </nav>
       </div>
     </header>

@@ -98,7 +98,7 @@ export function ShopWindow({ shop, ens, compact = false }: { shop: ShopDef; ens:
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <div className="dark flex min-w-0 flex-col gap-4">
       <div className="flex items-center justify-between gap-3 px-1">
         <span className={`inline-flex items-center gap-2 text-sm font-medium ${hacked ? "text-bad" : "text-ok"}`}>
           <span className={`h-2 w-2 rounded-full ${hacked ? "bg-bad" : "bg-ok"} shadow-[0_0_10px_currentColor]`} />
@@ -124,7 +124,7 @@ export function ShopWindow({ shop, ens, compact = false }: { shop: ShopDef; ens:
       </Tilt3D>
 
       {hacked && (
-        <div className="rounded-2xl border border-bad/30 bg-badbg/40 p-4">
+        <div className="rounded-2xl border border-bad/30 bg-badbg p-4">
           <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-bad">Behind the page · what the hacker changed</div>
           <div className="mt-3 flex flex-wrap gap-2">
             {ATTACKS.map((a) => (

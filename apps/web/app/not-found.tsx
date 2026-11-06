@@ -10,7 +10,7 @@ export default function NotFound() {
       </header>
 
       <main id="main" className="relative mx-auto flex w-full max-w-xl flex-1 flex-col items-center justify-center px-5 pb-24 text-center">
-        <div className="mb-8 w-full overflow-hidden rounded-xl border border-[#23264a] bg-[#0b0d1a] text-left shadow-sm">
+        <div className="mb-8 w-full dark overflow-hidden rounded-xl border border-[#23264a] bg-[#0b0d1a] text-left shadow-sm">
           <div className="flex items-center gap-1.5 border-b border-[#23264a] px-3 py-2">
             <span className="h-2 w-2 rounded-full bg-[#f08a80]" />
             <span className="h-2 w-2 rounded-full bg-[#f0c062]" />

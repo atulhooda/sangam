@@ -38,7 +38,7 @@ export function SangamTile({ size = 26 }: { size?: number }) {
   return (
     <span
       aria-hidden
-      className="inline-grid shrink-0 place-items-center rounded-[28%] bg-[linear-gradient(160deg,#6d6af8,#3b2fd6)] shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_6px_18px_-6px_rgba(99,102,241,0.9)]"
+      className="dark inline-grid shrink-0 place-items-center rounded-[28%] bg-[linear-gradient(160deg,#6d6af8,#3b2fd6)] shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_6px_18px_-6px_rgba(99,102,241,0.9)]"
       style={{ width: size, height: size }}
     >
       <SangamMark size={Math.round(size * 0.62)} className="text-white" />
@@ -196,13 +196,13 @@ export function PillCTA({ href, children, dark = false }: { href: string; childr
     <Link
       href={href}
       className={`group inline-flex items-center gap-3 rounded-full py-1.5 pl-5 pr-1.5 text-sm font-medium shadow-[0_8px_40px_-8px_rgba(120,120,255,0.55)] transition hover:-translate-y-0.5 ${
-        dark ? "bg-[#0b0b14] text-white" : "bg-white text-[#0b0b14]"
+        dark ? "bg-black text-white" : "bg-white text-black"
       }`}
     >
       {children}
       <span
         className={`grid h-7 w-7 place-items-center rounded-full transition group-hover:translate-x-0.5 ${
-          dark ? "bg-white text-[#0b0b14]" : "bg-[#0b0b14] text-white"
+          dark ? "bg-white text-black" : "bg-black text-white"
         }`}
       >
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
@@ -286,7 +286,7 @@ export function FloorGrid({ className = "" }: { className?: string }) {
 export function SpaceBackdrop() {
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 -z-20 overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_45%_at_50%_0%,rgba(30,32,70,0.55),transparent_70%)]" />
+      <div className="space-glow absolute inset-0 bg-[radial-gradient(ellipse_70%_45%_at_50%_0%,rgba(30,32,70,0.55),transparent_70%)]" />
       <div className="absolute -bottom-[25%] -right-[10%] h-[70%] w-[60%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(79,70,229,0.22),transparent_70%)] blur-3xl" />
       <div className="absolute -bottom-[30%] -left-[10%] h-[50%] w-[50%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(67,56,202,0.18),transparent_70%)] blur-3xl" />
       <Starfield count={60} className="opacity-60" />

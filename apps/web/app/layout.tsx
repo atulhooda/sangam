@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { THEME_SCRIPT, ThemeToggle } from "./components/theme-toggle";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SpaceBackdrop } from "./components/space/kit";
 import "./globals.css";
@@ -32,7 +33,11 @@ export const viewport: Viewport = { themeColor: "#05060d" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable}`}>
+    // The theme script may switch .dark before React hydrates, hence suppressHydrationWarning.
+    <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="antialiased">
         <SpaceBackdrop />
         {/* first Tab stop on every page: jump past the nav */}
@@ -43,6 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           Skip to content
         </a>
         {children}
+        <ThemeToggle />
       </body>
     </html>
   );

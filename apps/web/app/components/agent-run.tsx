@@ -301,7 +301,7 @@ export function AgentRunOverlay({ state, onClose }: { state: AgentRunState | nul
           <p className="sr-only" aria-live="polite">{summary}</p>
 
           <motion.div
-            className="relative w-full max-w-2xl overflow-hidden rounded-3xl bg-[#0c0e1c]/95 shadow-[0_40px_80px_-30px_rgba(0,0,0,0.9),0_20px_60px_-30px_rgba(99,102,241,0.6)] ring-1 ring-white/15"
+            className="dark relative w-full max-w-2xl overflow-hidden rounded-3xl bg-[#0c0e1c]/95 shadow-[0_40px_80px_-30px_rgba(0,0,0,0.9),0_20px_60px_-30px_rgba(99,102,241,0.6)] ring-1 ring-white/15"
             initial={{ opacity: 0, y: 24, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.98 }}

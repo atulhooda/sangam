@@ -51,7 +51,7 @@ export function Nav() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduce ? 0 : 0.9, ease: EASE, delay: 0.05 }}
     >
-      <div className="pointer-events-auto flex h-[52px] w-full max-w-[920px] items-center justify-between gap-4 rounded-full bg-[#0d0e1a]/70 pl-5 pr-1.5 shadow-[0_10px_40px_-12px_rgba(0,0,0,0.6)] ring-1 ring-white/10 backdrop-blur-xl">
+      <div className="pointer-events-auto flex h-[52px] w-full max-w-[920px] items-center justify-between gap-4 rounded-full bg-surface/70 pl-5 pr-1.5 shadow-[0_10px_40px_-12px_rgba(0,0,0,0.6)] ring-1 ring-white/10 backdrop-blur-xl">
         <Link href="/" aria-label="Sangam home" className="shrink-0">
           <Logo />
         </Link>
@@ -66,7 +66,7 @@ export function Nav() {
           <span className="hidden sm:block">
             <AccountMenu />
           </span>
-          <Link href="/dashboard" className="inline-flex h-9 items-center rounded-full bg-white px-4 text-[13px] font-medium text-[#0b0b14] transition-colors hover:bg-white/90">
+          <Link href="/dashboard" className="inline-flex h-9 items-center rounded-full bg-white px-4 text-[13px] font-medium text-black transition-colors hover:bg-white/90">
             Watch it live
           </Link>
         </div>
@@ -96,13 +96,12 @@ function PlanetHorizon({ children, caption }: { children?: ReactNode; caption?: 
 
       <div aria-hidden className="pointer-events-none absolute left-1/2 top-[40%] -translate-x-1/2" style={{ width: "max(240vw, 1500px)", height: "max(70vw, 520px)" }}>
         <motion.div
-          className="absolute inset-0 rounded-[50%]"
-          style={{ background: "radial-gradient(ellipse 60% 40% at 50% 0%, #2a2c42 0%, #161727 30%, #0a0b16 60%, #05060d 100%)" }}
+          className="planet-disc absolute inset-0 rounded-[50%]"
           initial={{ boxShadow: "0 -2px 6px rgba(199,210,254,0), 0 -30px 120px 10px rgba(99,102,241,0)" }}
           animate={{ boxShadow: "0 -1px 10px rgba(199,210,254,0.85), 0 -30px 120px 10px rgba(99,102,241,0.45)" }}
           transition={t(0.5, 2)}
         />
-        <motion.div className="absolute inset-0 rounded-[50%] border-t-[1.5px] border-white/90" initial={{ opacity: 0.15 }} animate={{ opacity: 1 }} transition={t(0.6, 2)} />
+        <motion.div className="planet-rim absolute inset-0 rounded-[50%] border-t-[1.5px] border-white/90" initial={{ opacity: 0.15 }} animate={{ opacity: 1 }} transition={t(0.6, 2)} />
         <div className="absolute inset-0 rounded-[50%] shadow-[inset_0_24px_60px_-28px_rgba(165,180,252,0.45)]" />
       </div>
 
@@ -149,8 +148,8 @@ export function Hero() {
     transition: { duration: reduce ? 0 : 1, ease: EASE, delay: reduce ? 0 : d },
   });
   return (
-    <section id="main" tabIndex={-1} className="relative flex min-h-[100svh] flex-col overflow-hidden bg-[#05060d] outline-none">
-      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_45%_at_50%_0%,rgba(30,32,70,0.35),transparent_70%)]" />
+    <section id="main" tabIndex={-1} className="relative flex min-h-[100svh] flex-col overflow-hidden bg-bg outline-none">
+      <div aria-hidden className="space-glow pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_45%_at_50%_0%,rgba(30,32,70,0.35),transparent_70%)]" />
       <Starfield count={80} />
       <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col items-center px-5 pt-36 text-center sm:pt-44">
         <motion.p className="mb-6 inline-flex items-center gap-2 rounded-full bg-white/[0.06] px-3.5 py-1.5 text-xs text-white/60 ring-1 ring-white/10 backdrop-blur" {...lift(0)}>
@@ -190,7 +189,7 @@ function CardChip() {
 
 function RupeeCard({ amount, upi }: { amount: string; upi: string }) {
   return (
-    <div className="relative aspect-[1.586/1] w-full overflow-hidden rounded-[22px] bg-[linear-gradient(125deg,#f5f5f8_0%,#d9dbe4_38%,#b7bac8_62%,#e4e5ec_100%)] shadow-[0_40px_80px_-20px_rgba(0,0,0,0.75),0_10px_30px_-10px_rgba(16,185,129,0.35)] ring-1 ring-white/60">
+    <div className="dark relative aspect-[1.586/1] w-full overflow-hidden rounded-[22px] bg-[linear-gradient(125deg,#f5f5f8_0%,#d9dbe4_38%,#b7bac8_62%,#e4e5ec_100%)] shadow-[0_40px_80px_-20px_rgba(0,0,0,0.75),0_10px_30px_-10px_rgba(16,185,129,0.35)] ring-1 ring-white/60">
       <div className="absolute inset-0 bg-[linear-gradient(105deg,transparent_30%,rgba(255,255,255,0.75)_45%,transparent_58%)] opacity-70" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_80%_110%,rgba(52,211,153,0.28),transparent_60%)]" />
       <div className="relative flex h-full flex-col justify-between p-[7%] text-[#1a1b26]">
@@ -216,7 +215,7 @@ function RupeeCard({ amount, upi }: { amount: string; upi: string }) {
 
 function UsdcCard({ amount, account }: { amount: string; account: string }) {
   return (
-    <div className="relative aspect-[1.586/1] w-full overflow-hidden rounded-[22px] bg-[linear-gradient(130deg,#3b3fe0_0%,#2a2bb8_32%,#1c1a80_62%,#120f4a_100%)] shadow-[0_50px_90px_-20px_rgba(0,0,0,0.85),0_20px_60px_-20px_rgba(79,70,229,0.75)] ring-1 ring-white/15">
+    <div className="dark relative aspect-[1.586/1] w-full overflow-hidden rounded-[22px] bg-[linear-gradient(130deg,#3b3fe0_0%,#2a2bb8_32%,#1c1a80_62%,#120f4a_100%)] shadow-[0_50px_90px_-20px_rgba(0,0,0,0.85),0_20px_60px_-20px_rgba(79,70,229,0.75)] ring-1 ring-white/15">
       <div className="absolute -left-1/4 -top-1/2 h-[140%] w-[70%] rotate-[25deg] bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.22),transparent)] blur-md" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_25%_0%,rgba(165,180,252,0.45),transparent_55%)]" />
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />

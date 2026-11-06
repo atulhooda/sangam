@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 /* Dark "terminal" frame, used for what the agent sees (steps 1–3). */
 function Terminal({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-[#23264a] bg-[#0b0d1a] shadow-sm">
+    <div className="dark overflow-hidden rounded-xl border border-[#23264a] bg-[#0b0d1a] shadow-sm">
       <div className="flex items-center gap-1.5 border-b border-[#23264a] px-3 py-2">
         <span className="h-2 w-2 rounded-full bg-[#f08a80]" />
         <span className="h-2 w-2 rounded-full bg-[#f0c062]" />
@@ -174,7 +174,7 @@ export function FiveSteps() {
                   className="step-ripple absolute inset-0 rounded-full bg-accent"
                   style={{ animationDelay: `${i * 1.2}s` }}
                 />
-                <span className="relative flex h-8 w-8 items-center justify-center rounded-full border-4 border-surface2 bg-accent text-sm font-bold text-[#0b0b14]">
+                <span className="relative flex h-8 w-8 items-center justify-center rounded-full border-4 border-surface2 bg-accent text-sm font-bold text-white dark:text-[#0b0b14]">
                   {i + 1}
                 </span>
               </span>
