@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { EnsView, Invoice, Quote, ReceiptChain, Settlement, Stats } from "@/lib/types";
 import { Card, CardHead, LedgerRow, MockTag, Spinner, StatusPill } from "../components/ui";
-import { ThemeToggle } from "../components/theme-toggle";
+import { Logo } from "../components/space/kit";
 import { AccountMenu } from "../components/account-menu";
 import { clock, hashscanSchedule, hashscanTopic, hashscanTx, isInFlight, isSimTx, rupees, shortHash, shortId, shortTx, timeAgo, usdc } from "./format";
 
@@ -79,10 +79,10 @@ function useNow() {
 function Header({ lastOk, error, now }: { lastOk: number | null; error: boolean; now: number }) {
   const fresh = lastOk !== null && now - lastOk < 4000 && !error;
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-bg/80 backdrop-blur-md">
+    <header className="space-bar sticky top-3 z-40">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3.5">
         <div className="flex items-center gap-3">
-          <a href="/" className="text-lg font-bold tracking-tight text-accent">sangam</a>
+          <a href="/" aria-label="Sangam home"><Logo /></a>
           <span className="text-line">/</span>
           <span className="text-sm font-medium">Settlement desk</span>
         </div>
@@ -94,8 +94,7 @@ function Header({ lastOk, error, now }: { lastOk: number | null; error: boolean;
             </span>
             {error ? "API unreachable" : fresh ? "Live" : "Connecting…"}
           </span>
-          <ThemeToggle />
-          <a href="/" className="hidden rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent hover:text-ink sm:block">
+          <a href="/" className="hidden rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent hover:text-ink sm:block">
             ← Home
           </a>
           <AccountMenu />
@@ -229,18 +228,18 @@ function Node({ state, n }: { state: StepState; n: number }) {
   const base = "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-colors duration-300";
   switch (state) {
     case "done":
-      return <span className={`${base} bg-ok text-white dark:text-[#1a1917]`}>✓</span>;
+      return <span className={`${base} bg-ok text-white dark:text-[#0b0d1a]`}>✓</span>;
     case "active":
       return (
-        <span className={`${base} bg-accent text-white dark:text-[#1a1917]`}>
+        <span className={`${base} bg-accent text-white dark:text-[#0b0d1a]`}>
           <span className="absolute inset-0 animate-ping rounded-full bg-accent/40" />
           <Spinner className="relative h-4 w-4" />
         </span>
       );
     case "warn":
-      return <span className={`${base} bg-warn text-white dark:text-[#1a1917]`}>‖</span>;
+      return <span className={`${base} bg-warn text-white dark:text-[#0b0d1a]`}>‖</span>;
     case "fail":
-      return <span className={`${base} bg-bad text-white dark:text-[#1a1917]`}>✕</span>;
+      return <span className={`${base} bg-bad text-white dark:text-[#0b0d1a]`}>✕</span>;
     case "skipped":
       return <span className={`${base} border-2 border-dashed border-line text-muted`}>–</span>;
     default:
@@ -526,7 +525,7 @@ function TryCard({ stats, onSent }: { stats: Stats | null; onSent: () => void })
           onClick={() => payAsAgent("ticket")}
           disabled={busy !== null || !canPay}
           title={canPay ? undefined : "Set CUSTOMER_ACCOUNT_ID and CUSTOMER_PRIVATE_KEY in .env"}
-          className="flex w-full items-center justify-between rounded-xl bg-accent px-4 py-3 text-left font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#1a1917]"
+          className="flex w-full items-center justify-between rounded-full bg-accent px-4 py-3 text-left font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:text-[#0b0d1a]"
         >
           <span>
             Pay as agent
@@ -628,7 +627,7 @@ function InvoiceCard({ invoice }: { invoice: { decoded: Invoice; raw: string } |
               {raw ? "Hide" : "Show"} raw PAYMENT-REQUIRED header
             </button>
             {raw && (
-              <pre className="mono mt-2 max-h-32 overflow-auto break-all whitespace-pre-wrap rounded-lg bg-[#1a1917] p-3 text-[10.5px] text-[#ece9e2]">
+              <pre className="mono mt-2 max-h-32 overflow-auto break-all whitespace-pre-wrap rounded-lg bg-[#0b0d1a] p-3 text-[10.5px] text-[#e6e9f5]">
                 {invoice!.raw}
               </pre>
             )}
