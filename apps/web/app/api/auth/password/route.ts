@@ -1,6 +1,6 @@
 import { parentName } from "@sangam/ens";
 import { LabelTakenError, findMerchantByLabel } from "@/lib/server/identity";
-import { checkDemoLogin, clearFailures, demoLoginsEnabled, ensureDemoMerchant, isLockedOut, noteFailure } from "@/lib/server/demo-logins";
+import { checkDemoLogin, clearFailures, demoLogins, demoLoginsEnabled, ensureDemoMerchant, isLockedOut, noteFailure } from "@/lib/server/demo-logins";
 import { burnPasswordCheck, verifyPassword } from "@/lib/server/passwords";
 import { createSession, homeFor } from "@/lib/server/session";
 
@@ -34,8 +34,9 @@ export async function POST(req: Request) {
   }
 
   // Sangam's demo shops (DEMO_MERCHANT_LOGINS): username or ENS name.
-  const demo = demoLoginsEnabled() ? (checkDemoLogin(raw, password) ?? checkDemoLogin(raw.replace(suffix, ""), password)) : null;
-  const demoForName = demo && (demo.ensName === name || demo.username === raw) ? demo : null;
+  // Typed as the demo username (railkart) or as the shop's name (tickets / tickets.sangam.eth).
+  const byName = demoLogins().find((l) => l.ensName === name);
+  const demoForName = demoLoginsEnabled() ? checkDemoLogin(byName ? byName.username : raw, password) : null;
   if (!demoForName) {
     if (!merchant) await burnPasswordCheck(password);
     noteFailure(name);
