@@ -42,7 +42,8 @@ export async function notifyIfSettled(res: Response, merchant: string, tag = "me
   if (!settle.success || !settle.transaction) return;
   console.log(`[${tag}] ${merchant} settled ${settle.transaction}`);
   // amount may be absent: Sangam's chain check records what actually landed.
-  await notifySangam({ merchant, hederaTxId: settle.transaction, payer: settle.payer, usdcAmount: settle.amount ?? "0" }, tag);
+  const rail = settle.network === "eip155:1874" ? "whitechain" : "hedera";
+  await notifySangam({ merchant, hederaTxId: settle.transaction, payer: settle.payer, usdcAmount: settle.amount ?? "0", rail }, tag);
 }
 
 /**

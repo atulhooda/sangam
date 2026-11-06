@@ -24,6 +24,19 @@ import { HEDERA_NETWORK, USDC_DECIMALS, usdcTokenId } from "./client.ts";
 
 export const facilitatorUrl = () => envOr("FACILITATOR_URL", "https://api.testnet.blocky402.com");
 
+/** The hosted Hedera facilitator (Blocky402 by default). */
+export const hederaFacilitatorClient = () => new HTTPFacilitatorClient({ url: facilitatorUrl() });
+
+/** Merchant-side Hedera scheme, USDC by default. Register under "hedera:*". */
+export const hederaServerScheme = () =>
+  new ExactHederaServerScheme({ defaultAssets: { [HEDERA_NETWORK]: { asset: usdcTokenId(), decimals: USDC_DECIMALS } } });
+
+/** Buyer-side Hedera scheme registration that signs with the given account. */
+export function hederaClientScheme(accountId: string, privateKey: string) {
+  const signer = createClientHederaSigner(accountId, PrivateKey.fromStringECDSA(privateKey), { network: HEDERA_NETWORK });
+  return { network: "hedera:*" as const, client: new ExactHederaClientScheme(signer) };
+}
+
 export type SettledPayment = { transaction: string; payer?: string; amount: string; network: string };
 
 /**
@@ -32,12 +45,7 @@ export type SettledPayment = { transaction: string; payer?: string; amount: stri
  * and notify Sangam from the PAYMENT-RESPONSE header instead (notifyIfSettled).
  */
 export function createMerchantServer(onSettled: (p: SettledPayment) => Promise<void> | void): x402ResourceServer {
-  const server = new x402ResourceServer(new HTTPFacilitatorClient({ url: facilitatorUrl() })).register(
-    "hedera:*",
-    new ExactHederaServerScheme({
-      defaultAssets: { [HEDERA_NETWORK]: { asset: usdcTokenId(), decimals: USDC_DECIMALS } },
-    }),
-  );
+  const server = new x402ResourceServer(hederaFacilitatorClient()).register("hedera:*", hederaServerScheme());
   server.onAfterSettle(async ({ result, requirements }) => {
     if (!result.success) return;
     await onSettled({

@@ -2,16 +2,16 @@ import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { withX402 } from "@x402/next";
 import { resolveMerchant } from "@sangam/ens";
-import { createMerchantServer } from "@sangam/hedera";
-import { formatUsdc, inrPerUsd, paiseToUsdcAtomic } from "@sangam/shared";
 import { notifyIfSettled } from "@/lib/server/merchant";
+import { createSangamServer, merchantAccepts } from "@/lib/server/rails";
 
 export const dynamic = "force-dynamic";
 
 /*
  * A Sangam-hosted x402 payment link for merchants with no API of their own:
  * GET /merchant/pay/riya.sangam.eth → 402 for the price in Riya's ENS record,
- * payable to Riya's own deposit account → a receipt. Onboarding publishes this
+ * payable to Riya's own deposit account on Hedera (USDC) or Whitechain (USDT)
+ * → a receipt. Onboarding publishes this
  * URL as the merchant's ENS `url` unless the merchant gives its own endpoint.
  */
 
@@ -23,7 +23,7 @@ function paywallFor(ensName: string): Paywall {
   let p = paywalls.get(ensName);
   if (p) return p;
   // Notices are sent from GET (see notifyIfSettled).
-  const server = createMerchantServer(() => undefined);
+  const server = createSangamServer();
   p = withX402(
     async () => {
       const rec = await resolveMerchant(ensName);
@@ -33,13 +33,7 @@ function paywallFor(ensName: string): Paywall {
       });
     },
     {
-      accepts: {
-        scheme: "exact",
-        network: "hedera:testnet",
-        payTo: async () => (await resolveMerchant(ensName)).hederaPayTo,
-        price: async () => `$${formatUsdc(paiseToUsdcAtomic((await resolveMerchant(ensName)).priceInrPaise, await inrPerUsd()))}`,
-        extra: { ensName },
-      },
+      accepts: merchantAccepts(ensName),
       description: `Payment to ${ensName} via Sangam`,
       mimeType: "application/json",
     },

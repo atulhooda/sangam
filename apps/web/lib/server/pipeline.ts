@@ -1,14 +1,17 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import { privateKeyToAccount } from "viem/accounts";
 import { issueSubname, resolveMerchant } from "@sangam/ens";
 import { confirmPayment, createScheduledRefund, writeReceipt } from "@sangam/hedera";
 import { decide, mockDecision, ogBalance } from "@sangam/og";
+import * as whitechain from "@sangam/whitechain";
 import {
   envOr,
   hasEnv,
   inrPerUsd,
   mocks,
   payout,
+  type Rail,
   usdcAtomicToPaise,
   type Settlement,
   type SettlementNotice,
@@ -23,9 +26,11 @@ import { findByTx, insertSettlement, listSettlements, recentForMerchant, recentF
  *   0. identify @sangam/ens     resolve the merchant; ONDC sellers get their
  *                               ondc-<seller>.sangam.eth subname on first order
  *   1. verify   @sangam/hedera  Mirror Node: did the USDC really land?
+ *               @sangam/whitechain  or, for USDT on Whitechain, the tx receipt's Transfer logs
  *   2. decide   @sangam/og      0G Compute: pay out or hold, and the fee
  *   3. pay out  @sangam/shared  RazorpayX UPI payout in INR
  *   4. receipt  @sangam/hedera  HCS message: tamper-evident record
+ *               @sangam/whitechain  or the SangamReceipts contract (hash-chained, one per payment)
  *
  * Each step is real or mocked according to .env (see mocks() in
  * packages/shared/src/config.ts), so services go live one at a time.
@@ -35,6 +40,9 @@ import { findByTx, insertSettlement, listSettlements, recentForMerchant, recentF
  */
 
 export const isSimulatedTx = (tx: string) => tx.startsWith("sim-");
+
+/** The rail a notice is on: as stated, else from the transaction id's format (0x… hash = Whitechain). */
+const railOf = (n: { rail?: Rail; hederaTxId: string }): Rail => n.rail ?? (whitechain.isWhitechainTx(n.hederaTxId) ? "whitechain" : "hedera");
 
 /** Pause between steps so the dashboard can show each one (DEMO_STEP_DELAY_MS). */
 const pause = () => {
@@ -70,6 +78,7 @@ export async function acceptNotice(notice: SettlementNotice): Promise<Settlement
     quotedInrPaise: notice.quotedInrPaise ?? null,
     ondc: notice.ondc ?? null,
     source: notice.source ?? "x402",
+    rail: railOf(notice),
     status: "received",
     error: null,
     createdAt: now,
@@ -87,11 +96,16 @@ export async function runPipeline(start: Settlement): Promise<void> {
     const merchant = await identifyMerchant(s);
     await pause();
 
-    // 1. Verify the payment on-chain.
+    // 1. Verify the payment on-chain, on whichever rail it came in on.
+    const rail = railOf(s);
+    // On Whitechain, USDT lands in the merchant's deposit address: the one in ENS, else the derived one.
+    const payTo = rail === "whitechain" ? (merchant.whitechainPayTo ?? whitechain.depositAddress(s.merchant)) : merchant.hederaPayTo;
     const skipChain = simulated || m.chainVerify;
     const confirmed = skipChain
       ? { credited: BigInt(s.usdcAmount), payer: null }
-      : await confirmPayment(s.hederaTxId, merchant.hederaPayTo, BigInt(s.usdcAmount));
+      : rail === "whitechain"
+        ? await whitechain.confirmPayment(s.hederaTxId, payTo, BigInt(s.usdcAmount))
+        : await confirmPayment(s.hederaTxId, payTo, BigInt(s.usdcAmount));
     const fxRate = await inrPerUsd();
     const inrGrossPaise = usdcAtomicToPaise(confirmed.credited, fxRate);
     const payer = confirmed.payer ?? s.payer;
@@ -146,7 +160,20 @@ export async function runPipeline(start: Settlement): Promise<void> {
       s = await updateSettlement(s.id, { status: "paid", payoutRef: result.ref, payoutMode: result.mode });
     } else {
       s = await updateSettlement(s.id, { status: "held" });
-      if (!simulated && !m.hcs && payer && hasEnv("OPERATOR_ACCOUNT_ID", "OPERATOR_PRIVATE_KEY", "TREASURY_ACCOUNT_ID")) {
+      if (!simulated && rail === "whitechain" && payer && whitechain.whitechainEnabled()) {
+        // The deposit address is Sangam-derived, so Sangam signs a gasless USDT
+        // transfer back to the payer and the relayer submits it.
+        if (payTo.toLowerCase() === whitechain.depositAddress(s.merchant).toLowerCase()) {
+          try {
+            const tx = await whitechain.gaslessTransfer(whitechain.depositKey(s.merchant), payer as `0x${string}`, BigInt(s.usdcAmount));
+            s = await updateSettlement(s.id, {
+              refund: { rail: "whitechain", scheduleId: "", transactionId: tx, amountAtomic: s.usdcAmount, payer, createdAt: new Date().toISOString() },
+            });
+          } catch (err) {
+            await updateSettlement(s.id, { error: `refund failed: ${(err as Error).message.split("\n")[0]}` });
+          }
+        }
+      } else if (!simulated && rail === "hedera" && !m.hcs && payer && hasEnv("OPERATOR_ACCOUNT_ID", "OPERATOR_PRIVATE_KEY", "TREASURY_ACCOUNT_ID")) {
         try {
           // From the account that received it: the merchant's deposit account, or the shared treasury.
           const refund = await createScheduledRefund(payer, s.usdcAmount, `Sangam refund ${s.id}`, merchant.hederaPayTo);
@@ -157,10 +184,33 @@ export async function runPipeline(start: Settlement): Promise<void> {
       }
     }
 
-    // 4. Tamper-evident receipt on HCS, hash-chained to the one before it. A
+    // 4. Tamper-evident receipt, hash-chained to the one before it: on HCS for
+    // Hedera payments, in the SangamReceipts contract for Whitechain ones. A
     // failure here doesn't undo the payout.
+    if (!simulated && rail === "whitechain" && whitechain.whitechainEnabled() && whitechain.receiptsAddress()) {
+      try {
+        const written = await whitechain.writeReceipt(s.hederaTxId as `0x${string}`, {
+          id: s.id,
+          merchant: s.merchant,
+          usdtAmount: s.usdcAmount,
+          fxRate: s.fxRate,
+          inrGrossPaise: s.inrGrossPaise,
+          feeBps: s.feeBps,
+          payoutPaise: s.payoutPaise,
+          decision: s.decision,
+          ogChatId: s.ogChatId,
+          ogVerified: s.ogVerified,
+          payoutRef: s.payoutRef,
+          payoutMode: s.payoutMode,
+          ...(s.refund ? { refundTx: s.refund.transactionId } : {}),
+        });
+        await updateSettlement(s.id, { hcsSequence: written.seq, receiptTx: written.tx });
+      } catch (err) {
+        await updateSettlement(s.id, { error: `receipt failed: ${(err as Error).message.split("\n")[0]}` });
+      }
+    }
     const topicId = process.env.HCS_TOPIC_ID;
-    if (!simulated && !m.hcs && topicId) {
+    if (!simulated && rail === "hedera" && !m.hcs && topicId) {
       try {
         const { seq: hcsSequence } = await writeReceipt(topicId, {
           id: s.id,
@@ -216,7 +266,10 @@ async function identifyMerchant(s: Settlement) {
 
 /* ── stats ── */
 
-const g = globalThis as unknown as { __sangamOgBalance?: { value: string | null; at: number } };
+const g = globalThis as unknown as {
+  __sangamOgBalance?: { value: string | null; at: number };
+  __sangamWcHead?: { value: Awaited<ReturnType<typeof whitechain.readReceiptsHead>>; at: number };
+};
 
 /** 0G ledger balance, cached for 30 s so the dashboard's 1 s poll doesn't hit the chain. */
 async function cachedOgBalance(): Promise<string | null> {
@@ -259,5 +312,36 @@ export async function stats(): Promise<Stats> {
     budget: await budgetSnapshot(),
     /** The buyer agent's Hedera account, so the buyer desk can show its purchases. */
     customerAccountId: hasEnv("CUSTOMER_ACCOUNT_ID") ? process.env.CUSTOMER_ACCOUNT_ID! : null,
+    rails: whitechain.whitechainEnabled() ? ["hedera", "whitechain"] : ["hedera"],
+    whitechain: await whitechainStats(),
   };
+}
+
+/** The Whitechain rail for the dashboard, with the receipts chain tip cached 15 s. */
+async function whitechainStats(): Promise<Stats["whitechain"]> {
+  if (!whitechain.whitechainEnabled()) return null;
+  const hit = g.__sangamWcHead;
+  let head = hit && Date.now() - hit.at < 15_000 ? hit.value : undefined;
+  if (head === undefined) {
+    head = await Promise.race([whitechain.readReceiptsHead(), new Promise<null>((r) => setTimeout(() => r(null), 4_000))]).catch(() => null);
+    g.__sangamWcHead = { value: head, at: Date.now() };
+  }
+  return {
+    receiptsContract: whitechain.receiptsAddress(),
+    receiptsCount: head?.count ?? null,
+    receiptsHead: head?.head ?? null,
+    relayer: whitechain.relayerAccount().address,
+    customerAddress: customerWhitechainAddress(),
+  };
+}
+
+/** The dashboard agent's Whitechain address: CUSTOMER_PRIVATE_KEY is secp256k1, so it signs on both chains. */
+export function customerWhitechainAddress(): string | null {
+  const key = process.env.CUSTOMER_PRIVATE_KEY?.trim();
+  if (!key) return null;
+  try {
+    return privateKeyToAccount((key.startsWith("0x") ? key : `0x${key}`) as `0x${string}`).address;
+  } catch {
+    return null;
+  }
 }

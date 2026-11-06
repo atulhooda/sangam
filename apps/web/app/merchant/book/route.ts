@@ -1,14 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { withX402 } from "@x402/next";
-import { resolveMerchant } from "@sangam/ens";
-import { createMerchantServer } from "@sangam/hedera";
-import { formatUsdc, inrPerUsd, paiseToUsdcAtomic } from "@sangam/shared";
 import { bookTicket, merchantEnsName, notifyIfSettled } from "@/lib/server/merchant";
+import { createSangamServer, merchantAccepts } from "@/lib/server/rails";
 
 export const dynamic = "force-dynamic";
 
 /*
- * The merchant's paywalled endpoint, behind x402 on Hedera:
+ * The merchant's paywalled endpoint, behind x402 on two rails (Hedera USDC
+ * and Whitechain USDT; the buyer's agent picks one):
  *   unpaid      → 402 with the invoice in the PAYMENT-REQUIRED header
  *   paid        → the facilitator verifies and settles the signed USDC
  *                 transfer, the merchant returns the ticket with a
@@ -23,7 +22,7 @@ export const dynamic = "force-dynamic";
 const name = merchantEnsName();
 
 // Settlement notices are sent from GET below (see notifyIfSettled).
-const server = createMerchantServer(() => undefined);
+const server = createSangamServer();
 
 async function handler(req: NextRequest) {
   const q = req.nextUrl.searchParams;
@@ -35,13 +34,7 @@ async function handler(req: NextRequest) {
 const paid = withX402(
   handler,
   {
-    accepts: {
-      scheme: "exact",
-      network: "hedera:testnet",
-      payTo: async () => (await resolveMerchant(name)).hederaPayTo,
-      price: async () => `$${formatUsdc(paiseToUsdcAtomic((await resolveMerchant(name)).priceInrPaise, await inrPerUsd()))}`,
-      extra: { ensName: name },
-    },
+    accepts: merchantAccepts(name),
     description: `Rail ticket from ${name}`,
     mimeType: "application/json",
   },

@@ -25,6 +25,7 @@ const NoticeSchema = z.object({
   hederaTxId: z.string().min(1).refine((tx) => !isSimulatedTx(tx), "sim- transaction ids are reserved for /api/simulate"),
   payer: z.string().optional(),
   usdcAmount: z.string().regex(/^\d+$/),
+  rail: z.enum(["hedera", "whitechain"]).optional(),
   quotedInrPaise: z.number().int().positive().optional(),
   ondc: z
     .object({

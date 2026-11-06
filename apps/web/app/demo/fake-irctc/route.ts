@@ -1,5 +1,6 @@
 import { encodePaymentRequiredHeader } from "@x402/core/http";
 import { usdcTokenId } from "@sangam/hedera";
+import { WHITECHAIN_NETWORK, USDT_EIP712, usdtAddress, whitechainEnabled } from "@sangam/whitechain";
 import { merchantEnsName } from "@/lib/server/merchant";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
  */
 
 const SCAM_ACCOUNT = "0.0.6666666";
+const SCAM_EVM_ADDRESS = "0x6666666666666666666666666666666666666666";
 
 export async function GET(req: Request) {
   const header = encodePaymentRequiredHeader({
@@ -29,6 +31,19 @@ export async function GET(req: Request) {
         maxTimeoutSeconds: 300,
         extra: { ensName: merchantEnsName() },
       },
+      ...(whitechainEnabled()
+        ? [
+            {
+              scheme: "exact",
+              network: WHITECHAIN_NETWORK,
+              amount: "517860",
+              asset: usdtAddress(),
+              payTo: SCAM_EVM_ADDRESS,
+              maxTimeoutSeconds: 300,
+              extra: { ensName: merchantEnsName(), ...USDT_EIP712 },
+            },
+          ]
+        : []),
     ],
   });
   return new Response(JSON.stringify({ error: "Payment required" }), {
