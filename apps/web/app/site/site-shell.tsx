@@ -50,7 +50,7 @@ export function SiteShell({ shop, ens, menu, tagline, children }: { shop: ShopDe
             © {shop.brand} · {shop.address.split("/")[0]}
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <SangamMark size={12} className="text-indigo-300" /> Payments by Sangam · verified on ENS as {ens.name}
+            <SangamMark size={12} className="text-blue-400" /> Payments by Sangam · verified on ENS as {ens.name}
           </span>
         </div>
       </footer>

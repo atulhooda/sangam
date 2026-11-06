@@ -153,7 +153,7 @@ export function Hero() {
       <Starfield count={80} />
       <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col items-center px-5 pt-36 text-center sm:pt-44">
         <motion.p className="mb-6 inline-flex items-center gap-2 rounded-full bg-white/[0.06] px-3.5 py-1.5 text-xs text-white/60 ring-1 ring-white/10 backdrop-blur" {...lift(0)}>
-          <SangamMark size={13} className="text-indigo-300" />
+          <SangamMark size={13} className="text-blue-400" />
           Settlement rail for the agent economy
         </motion.p>
         <motion.h1 className="font-medium leading-[1.04] tracking-[-0.035em]" {...lift(0.1)}>

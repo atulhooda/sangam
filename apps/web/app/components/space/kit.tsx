@@ -22,26 +22,24 @@ export const EASE = [0.22, 1, 0.36, 1] as const;
 
 /* ── brand ── */
 
-/** Sangam's mark: two streams (USDC and rupees) meeting and flowing on as one. */
+/**
+ * Sangam's mark (public/brand/sangam-mark.png), drawn as a mask so it takes the
+ * current text colour: white on the blue tile, blue in a line of text.
+ */
 export function SangamMark({ size = 18, className = "" }: { size?: number; className?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
-      <path d="M4 3c0 7 8 6 8 13" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
-      <path d="M20 3c0 7-8 6-8 13" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" opacity="0.7" />
-      <path d="M12 16v5" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
-    </svg>
-  );
+  const mask = "url(/brand/sangam-mark.png) center / contain no-repeat";
+  return <span aria-hidden className={`inline-block shrink-0 bg-current ${className}`} style={{ width: size, height: size, mask, WebkitMask: mask }} />;
 }
 
-/** The app tile: white mark on an indigo, lit-from-above square. */
+/** The app tile: the white mark on a blue, lit-from-above square. */
 export function SangamTile({ size = 26 }: { size?: number }) {
   return (
     <span
       aria-hidden
-      className="dark inline-grid shrink-0 place-items-center rounded-[28%] bg-[linear-gradient(160deg,#6d6af8,#3b2fd6)] shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_6px_18px_-6px_rgba(99,102,241,0.9)]"
+      className="dark inline-grid shrink-0 place-items-center rounded-[28%] bg-[linear-gradient(160deg,#3b82f6,#1e40af)] shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_6px_18px_-6px_rgba(37,99,235,0.9)]"
       style={{ width: size, height: size }}
     >
-      <SangamMark size={Math.round(size * 0.62)} className="text-white" />
+      <SangamMark size={Math.round(size * 0.68)} className="text-white" />
     </span>
   );
 }
