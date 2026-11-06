@@ -6,7 +6,8 @@ import type { SelfApp } from "@selfxyz/qrcode";
 import { SelfQRcodeWrapper } from "@selfxyz/qrcode/components/SelfQRcode";
 import type { Me } from "@/lib/types";
 import { Card, CardHead, Spinner } from "../components/ui";
-import { Logo } from "../components/space/kit";
+import { Logo, SangamTile } from "../components/space/kit";
+import { SignInCard } from "./sign-in-card";
 import { AccountMenu } from "../components/account-menu";
 import { SELF_SCOPE, selfEndpoint, selfMock } from "@/lib/self-config";
 
@@ -149,21 +150,25 @@ export default function VerifyPage() {
 
       <main className="mx-auto max-w-5xl space-y-5 px-5 py-6 sm:py-8">
         {/* ── screen 1: login ── */}
-        {step === "login" && (
+        {step === "login" && me === undefined && (
+          <p className="flex items-center justify-center gap-2 py-24 text-sm text-muted"><Spinner /> Checking…</p>
+        )}
+        {step === "login" && me === null && (
+          <SignInCard
+            role={role}
+            onRole={setRole}
+            onSelf={() => choose(role)}
+            starting={starting}
+            notice={notice}
+            failed={failed}
+            selfTestMode={selfMock()}
+          />
+        )}
+        {step === "login" && me && (
           <div className="mx-auto max-w-md py-10 text-center sm:py-16">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-accent text-3xl font-bold text-white dark:text-[#0b0d1a]">सं</div>
-            <h1 className="mt-6 text-3xl font-bold tracking-tight">Sign in to Sangam</h1>
-            <p className="mt-2 text-sm text-muted">
-              No passwords, no wallet. One zero-knowledge proof from your phone — an Aadhaar in India, a passport
-              anywhere else. Sangam learns your name and that you're over 18; nothing else about you leaves your
-              device.
-            </p>
-            {notice && !me && <p className="mt-4 rounded-lg bg-warnbg/60 p-3 text-sm" role="status">{notice}</p>}
-
-            {me === undefined ? (
-              <p className="mt-8 flex items-center justify-center gap-2 text-sm text-muted"><Spinner /> Checking…</p>
-            ) : me ? (
-              <div className="mt-8 rounded-xl border border-line bg-surface p-5 text-sm" role="status">
+            <span className="inline-block"><SangamTile size={44} /></span>
+            <h1 className="mt-5 text-2xl font-semibold tracking-tight">Welcome back</h1>
+              <div className="mt-6 rounded-2xl border border-line bg-surface p-5 text-sm" role="status">
                 <p className="font-medium">
                   You're signed in as {me.role === "merchant" ? `merchant ${me.label}` : "a buyer"}
                   {me.name ? ` — ${me.name}` : ""}.
@@ -187,28 +192,6 @@ export default function VerifyPage() {
                   </button>
                 )}
               </div>
-            ) : (
-              <button
-                onClick={() => (notice && role === "merchant" ? choose("merchant") : setStep("role"))}
-                className="mt-8 w-full rounded-full bg-accent px-6 py-4 font-medium text-white transition-opacity hover:opacity-90 dark:text-[#0b0d1a]"
-              >
-                Continue with Self →
-              </button>
-            )}
-            {!me && (
-              <a href="/merchant/login" className="mt-4 block text-sm text-accent underline-offset-2 hover:underline">
-                Merchant with a password? Sign in with your shop name →
-              </a>
-            )}
-            {!me && (
-              <a href="/buyer/login" className="mt-2 block text-sm text-accent underline-offset-2 hover:underline">
-                Buyer with a password? Sign in with your username →
-              </a>
-            )}
-            <p className="mt-6 text-xs text-muted">
-              The proof is verified at <span className="mono">/api/self/verify</span> and only the disclosed fields are stored.
-              {selfMock() && " Test mode: use the Self app's mock documents."}
-            </p>
           </div>
         )}
 
@@ -289,7 +272,7 @@ export default function VerifyPage() {
                 onClick={() => {
                   setFailed(null);
                   setSelfApp(null);
-                  setStep("role");
+                  setStep("login");
                 }}
                 className="text-sm text-muted underline-offset-2 hover:text-ink hover:underline"
               >
