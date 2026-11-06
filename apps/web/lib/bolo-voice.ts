@@ -5,12 +5,18 @@
  * port of OncoReady's ritu-voice.ts. Bolo does all the speech work
  * (recognition, conversation, synthesis); this only moves audio. Protocol:
  * Bolo's /media-stream, which is Ritu's:
- *   up:   connected, start{customParameters.session_token}, media{payload: base64 PCM16 8 kHz}, mark, stop
- *   down: media (same encoding), mark (echo when played), clear (flush playback),
+ *   up:   connected, start{customParameters.session_token, mic_rate, play_rate}, media{payload: base64 PCM16}, mark, stop
+ *   down: media{payload, sample_rate}, mark (echo when played), clear (flush playback),
  *         bolo_caption {role, text} (live captions)
+ *
+ * Audio is wideband: the mic goes up at 16 kHz (what Saaras recognises best)
+ * and Bolo's voice comes down at 24 kHz. The old protocol was phone-band
+ * 8 kHz both ways; a server that doesn't know these rates still sends 8 kHz,
+ * which is what a media message without sample_rate means.
  */
 
-const RATE = 8000;
+const MIC_RATE = 16000;
+const PLAY_RATE = 24000;
 /** Mic stays muted this long after Bolo's audio ends, so her echo from the speaker isn't sent. */
 const MIC_TAIL_S = 0.35;
 /** Playback lead when the queue is empty: absorbs network jitter without audible delay. */
@@ -112,19 +118,15 @@ export class BoloVoice {
     this.ctx = new AudioContext();
     this.outAnalyser = this.ctx.createAnalyser();
     this.outAnalyser.fftSize = 512;
-    // Gentler playback. Phone-band (8 kHz) speech concentrates its energy in
-    // the 2-4 kHz "presence" band, which reads as shrill on laptop speakers.
+    // Wideband speech needs no EQ (the old shelf filters only tamed shrill
+    // phone-band audio); a touch of warmth for small laptop speakers.
     const warmth = this.ctx.createBiquadFilter();
     warmth.type = "lowshelf";
-    warmth.frequency.value = 300;
-    warmth.gain.value = 3;
-    const soften = this.ctx.createBiquadFilter();
-    soften.type = "highshelf";
-    soften.frequency.value = 2200;
-    soften.gain.value = -6;
+    warmth.frequency.value = 250;
+    warmth.gain.value = 2;
     const level = this.ctx.createGain();
-    level.gain.value = 0.85;
-    this.outAnalyser.connect(warmth).connect(soften).connect(level).connect(this.ctx.destination);
+    level.gain.value = 0.9;
+    this.outAnalyser.connect(warmth).connect(level).connect(this.ctx.destination);
     this.micAnalyser = this.ctx.createAnalyser();
     this.micAnalyser.fftSize = 512;
 
@@ -135,7 +137,7 @@ export class BoloVoice {
     this.processor.connect(this.ctx.destination); // required for onaudioprocess to fire; outputs silence
     this.processor.onaudioprocess = (e) => {
       if (this.ws?.readyState !== WebSocket.OPEN || !this.ctx) return;
-      const samples = downsample(e.inputBuffer.getChannelData(0), this.ctx.sampleRate, RATE);
+      const samples = downsample(e.inputBuffer.getChannelData(0), this.ctx.sampleRate, MIC_RATE);
       // Half-duplex: while Bolo is talking (and briefly after, for speaker
       // echo) the mic sends silence. The stream stays continuous, which the
       // server's speech recogniser needs, but Bolo never hears herself.
@@ -154,7 +156,7 @@ export class BoloVoice {
           start: {
             streamSid: `sg_${id}`,
             callSid: `sg_${id}`,
-            customParameters: { session_token: this.token, callSource: "sangam_browser" },
+            customParameters: { session_token: this.token, callSource: "sangam_browser", mic_rate: MIC_RATE, play_rate: PLAY_RATE },
           },
         }),
       );
@@ -168,7 +170,7 @@ export class BoloVoice {
   }
 
   private handle(raw: string) {
-    let msg: { event?: string; media?: { payload?: string }; mark?: { name?: string }; role?: string; text?: string };
+    let msg: { event?: string; media?: { payload?: string; sample_rate?: number }; mark?: { name?: string }; role?: string; text?: string };
     try {
       msg = JSON.parse(raw);
     } catch {
@@ -176,7 +178,7 @@ export class BoloVoice {
     }
     if (msg.event === "media" && msg.media?.payload && this.ctx && this.outAnalyser) {
       const samples = fromBase64Pcm16(msg.media.payload);
-      const buffer = this.ctx.createBuffer(1, samples.length, RATE);
+      const buffer = this.ctx.createBuffer(1, samples.length, msg.media.sample_rate ?? 8000);
       buffer.copyToChannel(samples, 0);
       const node = this.ctx.createBufferSource();
       node.buffer = buffer;

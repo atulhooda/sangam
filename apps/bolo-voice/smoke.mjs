@@ -3,7 +3,8 @@
  *   HMAC session issue → /media-stream socket → streamed mic audio (here:
  *   Bulbul renders the caller's lines to PCM and we stream them as media
  *   events, exactly as the browser would) → captions + spoken replies come
- *   back → signed callback reports the confirmed invoice.
+ *   back → signed callback reports the invoice (read back as it is made).
+ *   Streams 8 kHz audio with no rate negotiation: the old-client path.
  *
  *   node smoke.mjs            # voice server on :3200, callback mock on :3299
  */
@@ -75,9 +76,7 @@ const quiet = (pcm, gain) => {
 };
 // Every caller phrase is rendered up front, so the test can speak at exact moments.
 const invoiceLine = decodeWav(await say("रमेश के लिए 2500 का इनवॉइस, सात दिन"));
-const yesLine = decodeWav(await say("हाँ, बना दो"));
 const decoyLine = decodeWav(await say("सुरेश के लिए 9000 का इनवॉइस"));
-const backgroundNo = quiet(decodeWav(await say("नहीं, मत बनाओ")), 0.2);
 
 // 1. HMAC-authed session issue — what the web app's /api/bolo/session does.
 const body = JSON.stringify({
@@ -179,22 +178,12 @@ await waitForLine("नमस्ते");
 
 console.log("🗣 (caller speaks the invoice line)");
 await stream(invoiceLine);
-const drafted = await waitForLine("बना दूँ");
-console.log(drafted ? "   ↳ Bolo read the draft back" : "   ↳ (no draft read-back within 60 s)");
-
-// Trap 2 — loudest voice: a quiet "no" from someone in the background, then the merchant's loud "haan".
-console.log("🗣 (background voice at 20% volume: नहीं, मत बनाओ)");
-await stream(backgroundNo);
-await new Promise((r) => setTimeout(r, 300));
-console.log("🗣 (caller confirms)");
-await stream(yesLine);
-await waitForLine("इनवॉइस बन गया");
+// No yes/no round any more: Bolo reads the invoice back as she makes it.
+await waitForLine("बना दिया");
 clearInterval(pump);
 
 const heardDecoy = callerCaptions.some((t) => t.includes("सुरेश") || t.includes("9000"));
-const heardBackground = callerCaptions.some((t) => t.includes("मत"));
 console.log(`${heardDecoy ? "❌" : "✅"} half-duplex: decoy spoken over Bolo was ${heardDecoy ? "HEARD" : "ignored"}`);
-console.log(`${heardBackground ? "❌" : "✅"} loudest voice: quiet background "no" was ${heardBackground ? "HEARD" : "gated out"}`);
 console.log(`${underruns === 0 ? "✅" : "❌"} smooth playback: ${underruns} underrun(s) across ${lines} spoken line(s)`);
 
 // 4. Token single-use check: a replay of `start` must be refused.
@@ -210,4 +199,4 @@ await new Promise((r) => setTimeout(r, 1500));
 const inv = received[0]?.body.result?.invoice;
 const rightInvoice = inv?.amountInr === 2500 && /रमेश|ramesh/i.test(inv?.buyerName ?? "");
 console.log(rightInvoice ? `✅ INVOICE CALLBACK: ${JSON.stringify(inv)}` : `❌ wrong/no invoice in callback: ${JSON.stringify(inv ?? null)}`);
-process.exit(rightInvoice && !heardDecoy && !heardBackground && underruns === 0 ? 0 : 1);
+process.exit(rightInvoice && !heardDecoy && underruns === 0 ? 0 : 1);

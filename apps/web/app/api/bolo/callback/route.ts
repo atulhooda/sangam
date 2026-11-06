@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       transcript: "(live conversation)",
     });
     await completeVoiceSession(session.id, { status: "completed", invoiceId: invoice.id, payUrl: `${new URL(req.url).origin}/api/bolo/invoice/${invoice.id}` });
-    return NextResponse.json({ reply: `इनवॉइस बन गया। पे लिंक तैयार है। धन्यवाद!` });
+    return NextResponse.json({ reply: "पे लिंक तैयार है। धन्यवाद!" });
   }
 
   if (report.status === "completed" && session.role === "buyer" && report.result?.intent === "pay") {

@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
 import { BoloSession, type Script } from "./brain";
-import { sarvamReady, speakPcm8k } from "./sarvam";
+import { OUT_RATE, sarvamReady, speakPcm, wavHeader } from "./sarvam";
 import { verify } from "./hmac";
 
 /*
@@ -95,27 +95,9 @@ const server = createServer(async (req, res) => {
   json(res, 404, { error: "not found" });
 });
 
-import { resample8k } from "./sarvam";
-
 async function speakWav(text: string): Promise<Buffer> {
-  const { pcm, sampleRate } = await speakPcm8k(text);
-  const wire = resample8k(pcm, sampleRate);
-  // Wrap the PCM in a minimal 8 kHz WAV header (44 bytes).
-  const header = Buffer.alloc(44);
-  header.write("RIFF", 0);
-  header.writeUInt32LE(36 + wire.length, 4);
-  header.write("WAVE", 8);
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(1, 22);
-  header.writeUInt32LE(8000, 24);
-  header.writeUInt32LE(16000, 28);
-  header.writeUInt16LE(2, 32);
-  header.writeUInt16LE(16, 34);
-  header.write("data", 36);
-  header.writeUInt32LE(wire.length, 40);
-  return Buffer.concat([header, wire]);
+  const pcm = await speakPcm(text, OUT_RATE);
+  return Buffer.concat([wavHeader(OUT_RATE, pcm.length), pcm]);
 }
 
 /* ── the media-stream socket ── */
@@ -139,7 +121,7 @@ wss.on("connection", (ws: WebSocket) => {
   ws.on("message", (raw: RawData) => {
     let msg: {
       event?: string;
-      start?: { customParameters?: { session_token?: string; callSource?: string } };
+      start?: { customParameters?: { session_token?: string; callSource?: string; mic_rate?: number; play_rate?: number } };
       media?: { payload?: string };
       mark?: { name?: string };
     };
@@ -160,7 +142,11 @@ wss.on("connection", (ws: WebSocket) => {
       }
       hit.used = true;
       record = hit;
-      session = new BoloSession(wire, hit.id, hit.script, hit.callbackUrl, () => sessions.delete(token));
+      // Newer clients say what they send and can play; older ones get the original 8 kHz both ways.
+      const params = msg.start?.customParameters ?? {};
+      const micRate = params.mic_rate === 16000 ? 16000 : 8000;
+      const playRate = params.play_rate === OUT_RATE ? OUT_RATE : 8000;
+      session = new BoloSession(wire, hit.id, hit.script, hit.callbackUrl, () => sessions.delete(token), micRate, playRate);
       session.begin();
       return;
     }
