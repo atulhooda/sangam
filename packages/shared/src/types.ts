@@ -16,6 +16,12 @@ export type MerchantRecord = {
    * names issued before verification existed: agents treat those as unverified.
    */
   status?: string;
+  /**
+   * sangam.bargain: how far the merchant's agent will haggle below priceInrPaise,
+   * in basis points (500 = 5%). resolveMerchant fills the default when the record
+   * is absent, so this is always set after a lookup.
+   */
+  bargainBps?: number;
 };
 
 export type SettlementStatus = "received" | "confirmed" | "decided" | "paid" | "held" | "failed";

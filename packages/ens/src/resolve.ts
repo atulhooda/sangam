@@ -3,7 +3,7 @@ import path from "node:path";
 import { normalize } from "viem/ens";
 import { DATA_DIR, REPO_ROOT, flag, type MerchantRecord } from "@sangam/shared";
 import { sepoliaClient } from "./client.ts";
-import { MERCHANT_FIELDS, MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY, type MerchantField } from "./records.ts";
+import { BARGAIN_TEXT_KEY, MERCHANT_FIELDS, MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY, parseBargainBps, type MerchantField } from "./records.ts";
 
 const CACHE_MS = 60_000;
 const g = globalThis as unknown as { __sangamEnsCache?: Map<string, { record: MerchantRecord; at: number }> };
@@ -82,6 +82,7 @@ async function readEnsMerchant(ensName: string): Promise<MerchantRecord> {
 
   let status: string | undefined;
   let evmPayTo: string | undefined;
+  let bargain: string | undefined;
   await Promise.all([
     ...MERCHANT_FIELDS.map(async (field) => {
       const value = await client.getEnsText({ name, key: MERCHANT_TEXT_KEYS[field] });
@@ -90,6 +91,12 @@ async function readEnsMerchant(ensName: string): Promise<MerchantRecord> {
     client.getEnsText({ name, key: STATUS_TEXT_KEY }).then((v) => {
       if (v) status = v;
     }),
+    client.getEnsText({ name, key: BARGAIN_TEXT_KEY }).then(
+      (v) => {
+        if (v) bargain = v;
+      },
+      () => undefined,
+    ),
     client.getEnsAddress({ name }).then(
       (v) => {
         if (v && v !== "0x0000000000000000000000000000000000000000") evmPayTo = v;
@@ -102,7 +109,12 @@ async function readEnsMerchant(ensName: string): Promise<MerchantRecord> {
   if (missing.length > 0) {
     throw new Error(`${ensName} is missing ENS text records: ${missing.map((f) => MERCHANT_TEXT_KEYS[f]).join(", ")}`);
   }
-  return { ...toRecord(ensName, values as Record<MerchantField, string>), ...(status ? { status } : {}), ...(evmPayTo ? { evmPayTo } : {}) };
+  return {
+    ...toRecord(ensName, values as Record<MerchantField, string>),
+    bargainBps: parseBargainBps(bargain),
+    ...(status ? { status } : {}),
+    ...(evmPayTo ? { evmPayTo } : {}),
+  };
 }
 
 function readLocalMerchant(ensName: string): MerchantRecord {
@@ -110,8 +122,8 @@ function readLocalMerchant(ensName: string): MerchantRecord {
   const all = JSON.parse(readFileSync(file, "utf8")) as Record<string, Record<MerchantField, string>>;
   const values = all[ensName];
   if (!values) throw new Error(`${ensName} not found in data/merchants.local.json`);
-  const { status } = values as Record<string, string>;
-  return { ...toRecord(ensName, values), ...(status ? { status } : {}) };
+  const { status, bargain } = values as Record<string, string>;
+  return { ...toRecord(ensName, values), bargainBps: parseBargainBps(bargain), ...(status ? { status } : {}) };
 }
 
 function toRecord(ensName: string, v: Record<MerchantField, string | number>): MerchantRecord {

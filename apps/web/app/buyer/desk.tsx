@@ -8,6 +8,7 @@ import { Logo } from "../components/space/kit";
 import { MetaMaskCard, type MetaMaskView } from "./metamask";
 import { AccountMenu } from "../components/account-menu";
 import { BoloAgent } from "../components/bolo-agent";
+import { BargainButton } from "./bargain";
 import { RAIL_NAME, clock, explorerName, explorerTx, settlementTxUrl, isSimTx, railOf, receiptLink, rupees, timeAgo, tokenOf, usdc } from "../dashboard/format";
 
 /*
@@ -325,6 +326,7 @@ export function BuyerDesk({ me }: { me: Me }) {
                       ) : (
                         <span className="rounded-full bg-warnbg px-2 py-0.5 text-[11px] font-medium text-warn">{m.status ?? "unverified"}</span>
                       )}
+                      <BargainButton ensName={m.ensName} disabled={!w || running || !m.verified} onDone={() => void loadWallet()} />
                       <button
                         onClick={() => runAgent([m.ensName])}
                         disabled={!w || running || !m.verified}
