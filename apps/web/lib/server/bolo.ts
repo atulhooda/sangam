@@ -140,3 +140,80 @@ export async function markBoloPaid(id: string, settlementTx: string): Promise<Bo
     return hit;
   });
 }
+
+/* ── voice sessions (Ritu-style: create over HMAC, complete via callback) ── */
+
+export type BoloVoiceSession = {
+  id: string;
+  role: "merchant" | "buyer";
+  /** The ENS name (merchant) or label (buyer) that owns the session. */
+  actor: string;
+  createdAt: string;
+  status: "open" | "completed" | "failed";
+  /** Merchant sessions: the invoice the confirmed voice conversation produced. */
+  invoiceId: string | null;
+  payUrl: string | null;
+  /** Buyer sessions: what they asked for ("pay" = the browser should pay on close). */
+  intent: "pay" | null;
+};
+
+const SESSIONS_FILE = path.join(DATA_DIR, "bolo-sessions.json");
+
+function readSessions(): BoloVoiceSession[] {
+  if (!existsSync(SESSIONS_FILE)) return [];
+  try {
+    return JSON.parse(readFileSync(SESSIONS_FILE, "utf8")) as BoloVoiceSession[];
+  } catch {
+    return [];
+  }
+}
+
+async function writeSessions(items: BoloVoiceSession[]) {
+  mkdirSync(path.dirname(SESSIONS_FILE), { recursive: true });
+  await writeFile(`${SESSIONS_FILE}.tmp`, JSON.stringify(items, null, 2));
+  await rename(`${SESSIONS_FILE}.tmp`, SESSIONS_FILE);
+}
+
+export function getVoiceSession(id: string): BoloVoiceSession | undefined {
+  return readSessions().find((s) => s.id === id);
+}
+
+export async function recordVoiceSession(row: {
+  id: string;
+  role: "merchant" | "buyer";
+  actor: string;
+}): Promise<BoloVoiceSession> {
+  const s: BoloVoiceSession = { ...row, createdAt: new Date().toISOString(), status: "open", invoiceId: null, payUrl: null, intent: null };
+  await withSessions((items) => {
+    items.push(s);
+    return s;
+  });
+  return s;
+}
+
+export async function completeVoiceSession(
+  id: string,
+  patch: { status: "completed" | "failed"; invoiceId?: string | null; payUrl?: string | null; intent?: "pay" | null },
+): Promise<BoloVoiceSession | undefined> {
+  return withSessions((items) => {
+    const hit = items.find((s) => s.id === id);
+    if (hit) {
+      hit.status = patch.status;
+      if (patch.invoiceId !== undefined) hit.invoiceId = patch.invoiceId ?? null;
+      if (patch.payUrl !== undefined) hit.payUrl = patch.payUrl ?? null;
+      if (patch.intent !== undefined) hit.intent = patch.intent ?? null;
+    }
+    return hit;
+  });
+}
+
+async function withSessions<T>(fn: (items: BoloVoiceSession[]) => T | Promise<T>): Promise<T> {
+  const run = state.lock.then(async () => {
+    const items = readSessions();
+    const result = await fn(items);
+    await writeSessions(items);
+    return result;
+  });
+  state.lock = run.catch(() => undefined);
+  return run;
+}

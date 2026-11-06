@@ -3,167 +3,126 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardHead, Spinner } from "../components/ui";
 import { AgentRunOverlay, runPayAsAgent, useAgentRun } from "../components/agent-run";
-import { WavRecorder } from "../../lib/wav";
-import { rupees } from "../dashboard/format";
+import { BoloVoice, type Caption, type VoicePhase } from "../../lib/bolo-voice";
 
 /*
- * Bolo Sangam, buyer side: the buyer speaks instead of clicking.
+ * Bolo Sangam, buyer side: a live Hindi conversation about the invoice.
  *
- *   "kitna dena hai?"   → the invoice is read back aloud (Bulbul, Hindi)
- *   "bhar do"           → the buyer agent pays the pasted invoice link over
- *                         x402 (ENS checks, budget, rails — the usual path),
- *                         and Bulbul confirms
- *
- * The agent only pays after the same trust checks as any other purchase:
- * voice is the interface, never the authority.
+ *   "kitna dena hai?"  → Bolo reads the invoice aloud
+ *   "bhar do" → "haan" → the voice session ends with a pay intent, and the
+ *   buyer's OWN browser (this component) runs the agent — payment authority
+ *   never leaves the buyer's session, ENS checks included.
  */
 
-type Phase = "idle" | "recording" | "thinking" | "paying" | "done";
+type Phase = "idle" | VoicePhase | "paying";
 
-type Status = { id: string; merchant: string; buyer: string; amountPaise: number; status: string; hcsSequence: number | null };
-
-type Reply = { transcript: string; parsed: { intent?: string; confirm?: boolean } };
-
-const invoiceIdOf = (url: string): string | null => {
-  const m = url.match(/bolo\/invoice\/([0-9a-f-]{36})/i);
-  return m?.[1] ?? null;
-};
+type SessionResult = { id: string; status: string; intent: "pay" | null };
 
 export function BoloBuyer() {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [url, setUrl] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
-  const [status, setStatus] = useState<Status | null>(null);
+  const [captions, setCaptions] = useState<Caption[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const recorder = useRef<WavRecorder | null>(null);
+  const voice = useRef<BoloVoice | null>(null);
   const agentRun = useAgentRun();
 
   useEffect(() => {
     fetch("/api/bolo/config", { cache: "no-store" })
-      .then((r) => r.json() as Promise<{ enabled?: boolean }>)
-      .then((c) => setEnabled(Boolean(c.enabled)))
+      .then((r) => r.json() as Promise<{ voiceEnabled?: boolean }>)
+      .then((c) => setEnabled(Boolean(c.voiceEnabled)))
       .catch(() => setEnabled(false));
   }, []);
 
-  const say = useCallback((text: string) => {
-    fetch("/api/bolo/speak", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) })
-      .then(async (r) => (r.ok ? ((await r.json()) as { audio: string }).audio : null))
-      .then((b64) => {
-        if (!b64) return;
-        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        void new Audio(URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }))).play().catch(() => undefined);
-      })
-      .catch(() => undefined);
-  }, []);
-
-  const loadStatus = useCallback(async () => {
-    const id = invoiceIdOf(url.trim());
-    if (!id) return null;
-    const res = await fetch(`/api/bolo/invoice/${id}/status`, { cache: "no-store" });
-    if (!res.ok) return null;
-    const s = (await res.json()) as Status;
-    setStatus(s);
-    return s;
+  const start = useCallback(async () => {
+    setError(null);
+    setCaptions([]);
+    const link = url.trim();
+    try {
+      const created = (await (
+        await fetch("/api/bolo/session", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ role: "buyer", invoiceUrl: link || undefined }),
+        })
+      ).json()) as { session_id: string; ws_url: string; token: string; error?: string };
+      if (created.error || !created.ws_url) throw new Error(created.error ?? "session refused");
+      voice.current = new BoloVoice(created.ws_url, created.token, {
+        onPhase: (p) => {
+          setPhase(p);
+          if (p === "ended") void maybePay(created.session_id);
+        },
+        onCaption: (c) => setCaptions((prev) => [...prev.slice(-6), c]),
+      });
+      await voice.current.start();
+    } catch (err) {
+      setError((err as Error).message);
+      setPhase("idle");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url]);
 
-  const onVoice = useCallback(
-    async (audio: Blob) => {
-      setPhase("thinking");
-      try {
-        const form = new FormData();
-        form.set("audio", audio, "speech.wav");
-        form.set("role", "buyer");
-        const res = await fetch("/api/bolo/voice", { method: "POST", body: form });
-        const body = (await res.json().catch(() => ({}))) as Reply & { error?: string };
-        if (!res.ok || !body.transcript) throw new Error(body.error ?? `voice parse failed (${res.status})`);
-        const intent = body.parsed.intent ?? "unknown";
-        if (intent === "amount" || intent === "status") {
-          const s = await loadStatus();
-          if (!s) {
-            say("Ye invoice nahi mila. Link check kijiye.");
-            setError("Paste a Bolo invoice link first.");
-          } else if (s.status === "paid") {
-            say("Ye invoice bhara ja chuka hai. Dhanyavaad.");
-          } else {
-            say(`Aapko ${s.buyer} ko ${Math.round(s.amountPaise / 100)} rupaye dene hain.`);
-          }
-          setPhase("idle");
-          return;
-        }
-        if (intent === "pay") {
-          const link = url.trim();
-          if (!invoiceIdOf(link) && !/^https?:\/\//i.test(link)) {
-            say("Pehle invoice ka link paste kijiye.");
-            setError("Paste the invoice's x402 pay link first.");
-            setPhase("idle");
-            return;
-          }
-          await pay(link);
-          return;
-        }
-        say("Samajh nahi aaya. Bhar do, ya kitna dena hai — boliye.");
-        setPhase("idle");
-      } catch (err) {
-        setError((err as Error).message);
-        setPhase("idle");
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [url, loadStatus, say],
-  );
-
-  const pay = useCallback(
-    async (link: string) => {
+  const maybePay = useCallback(
+    async (sessionId: string) => {
       setPhase("paying");
-      const { verdict, body } = await runPayAsAgent(
+      let result: SessionResult | null = null;
+      for (let i = 0; i < 15; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        try {
+          const s = (await (await fetch(`/api/bolo/session/${sessionId}`, { cache: "no-store" })).json()) as SessionResult;
+          if (s.status !== "open") {
+            result = s;
+            break;
+          }
+        } catch {
+          /* callback may still be in flight */
+        }
+      }
+      if (result?.intent !== "pay") {
+        setPhase("idle");
+        return;
+      }
+      const link = url.trim();
+      if (!/^https?:\/\//i.test(link)) {
+        setError("Bolo said pay, but there's no invoice link pasted.");
+        setPhase("idle");
+        return;
+      }
+      const { verdict } = await runPayAsAgent(
         agentRun.run,
         { title: "Bolo pay", target: new URL(link, window.location.origin).host },
         { kind: "url", url: link },
         "/api/pay",
       );
-      if (verdict.kind === "paid") {
-        say("Bhar gaya. Rasid consensus par hai.");
-        setPhase("done");
-        void loadStatus();
-      } else {
-        const message = verdict.kind === "refused" ? "Agent ne bhara hi nahi — invoice bharosa mandit nahi tha." : "Payment nahi hui.";
-        say(message);
-        setError(verdict.kind === "error" ? verdict.message : message);
-        setPhase("idle");
-        void body;
+      if (verdict.kind !== "paid") {
+        setError(verdict.kind === "refused" ? "Agent ne mana kar diya — invoice bharosa mandit nahi tha." : verdict.kind === "error" ? verdict.message : "Payment nahi hui.");
       }
+      setPhase("idle");
     },
-    [agentRun, loadStatus, say],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [url],
   );
 
-  const listen = useCallback(async () => {
-    setError(null);
-    if (phase === "recording") {
-      const audio = await recorder.current?.stop().catch(() => null);
-      recorder.current = null;
-      if (!audio) {
-        setError("Kuch sunayi nahi diya.");
-        setPhase("idle");
-        return;
-      }
-      await onVoice(audio);
-      return;
-    }
-    try {
-      recorder.current = recorder.current ?? new WavRecorder();
-      await recorder.current.start();
-      setPhase("recording");
-    } catch {
-      setError("Mic permission chahiye — browser se allow kijiye.");
-    }
-  }, [phase, onVoice]);
+  const hangUp = useCallback(() => voice.current?.stop(), []);
 
   if (enabled === null || !enabled) return null;
+
+  const inCall = phase !== "idle" && phase !== "ended" && phase !== "error" && phase !== "paying";
+  const speaking = phase === "bolo";
+  const label =
+    phase === "idle" ? "Paste the invoice link, then talk" :
+    phase === "connecting" ? "Connecting…" :
+    speaking ? "बोलो बोल रही है…" :
+    phase === "listening" ? "सुन रही हूँ — boliye" :
+    phase === "thinking" ? "सोच रही हूँ…" :
+    phase === "paying" ? "Agent पे कर रहा है…" :
+    phase === "ended" ? "Session खत्म" :
+    phase === "error" ? "Connection टूटा" : phase;
 
   return (
     <>
       <Card>
-        <CardHead title="Bolo pay — invoices by voice" hint="Invoice ka link paste kijiye, phir boliye: “kitna dena hai?” ya “bhar do”." />
+        <CardHead title="Bolo pay — live voice" hint="Invoice ka link paste kijiye, session shuru kijiye, phir boliye: “kitna dena hai?” ya “bhar do”." />
         <div className="flex flex-col gap-3 px-5 py-5">
           <input
             value={url}
@@ -173,28 +132,26 @@ export function BoloBuyer() {
           />
           <div className="flex items-center gap-3">
             <button
-              onClick={() => void listen()}
-              disabled={phase === "thinking" || phase === "paying"}
-              aria-label={phase === "recording" ? "Stop and listen" : "Speak"}
+              onClick={() => (inCall ? hangUp() : void start())}
+              disabled={phase === "connecting" || phase === "paying"}
+              aria-label={inCall ? "Hang up" : "Start voice session"}
               className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-xl text-white transition-all ${
-                phase === "recording" ? "bg-bad" : "bg-accent hover:opacity-90"
+                phase === "paying" ? "bg-warn" : inCall ? (speaking ? "bg-warn" : "bg-accent") : "bg-accent hover:opacity-90"
               } disabled:opacity-50`}
             >
-              {phase === "thinking" || phase === "paying" ? <Spinner /> : phase === "recording" ? "■" : "🎤"}
+              {phase === "paying" ? <Spinner /> : inCall ? "■" : "📞"}
             </button>
-            <p className="text-sm text-muted">
-              {phase === "idle" && "Mic dabaiye aur boliye"}
-              {phase === "recording" && <span className="text-bad">सुन रहा हूँ… click to stop</span>}
-              {phase === "thinking" && "Sarvam sun raha hai…"}
-              {phase === "paying" && "Agent pay kar raha hai…"}
-              {phase === "done" && "Bhara gaya ✓"}
-            </p>
+            <p className={`text-sm ${speaking ? "text-warn" : "text-muted"}`}>{label}</p>
           </div>
-          {status && (
-            <p className="rounded-xl bg-surface2 px-4 py-3 text-sm">
-              {status.buyer} · {rupees(status.amountPaise)} ·{" "}
-              <span className={status.status === "paid" ? "text-ok" : "text-warn"}>{status.status === "paid" ? "paid" : "unpaid"}</span>
-            </p>
+
+          {captions.length > 0 && (
+            <div className="space-y-1.5">
+              {captions.map((c, i) => (
+                <p key={i} className={`rounded-xl px-4 py-2.5 text-sm ${c.role === "bolo" ? "bg-surface2 text-ink" : "bg-okbg text-ok"}`}>
+                  {c.role === "bolo" ? "🎙 " : "🗣 "}{c.text}
+                </p>
+              ))}
+            </div>
           )}
           {error && <p className="text-sm text-bad">{error}</p>}
         </div>
