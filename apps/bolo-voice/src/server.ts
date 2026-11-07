@@ -42,7 +42,8 @@ const readBody = (req: IncomingMessage): Promise<string> =>
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://x");
   if (req.method === "GET" && url.pathname === "/health") {
-    return json(res, 200, { ok: true, sarvam: sarvamReady(), sessions: sessions.size });
+    // commit + start time, so a deploy can be confirmed from outside.
+    return json(res, 200, { ok: true, sarvam: sarvamReady(), sessions: sessions.size, commit: (process.env.RAILWAY_GIT_COMMIT_SHA ?? "").slice(0, 7) || null, startedAt: STARTED_AT });
   }
 
   if (req.method === "POST" && url.pathname === "/v1/browser-sessions") {
@@ -101,6 +102,8 @@ async function speakWav(text: string): Promise<Buffer> {
 }
 
 /* ── the media-stream socket ── */
+
+const STARTED_AT = new Date().toISOString();
 
 const wss = new WebSocketServer({ noServer: true });
 server.on("upgrade", (req, socket, head) => {
