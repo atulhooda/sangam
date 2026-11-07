@@ -416,7 +416,7 @@ function Txn({ s, from, merchant }: { s: Settlement; from: string; merchant?: Me
   const failed = s.status === "failed";
   const steps: { label: string; done: boolean; detail: React.ReactNode }[] = [
     {
-      label: "Paid on Hedera",
+      label: `Paid on ${RAIL_NAME[railOf(s)]}`,
       done: true,
       detail: isSimTx(s.hederaTxId) ? (
         <MockTag>simulated</MockTag>
@@ -465,7 +465,9 @@ function Txn({ s, from, merchant }: { s: Settlement; from: string; merchant?: Me
         <StatusPill s={s} />
       </div>
       <p className="mono mt-2 truncate text-[11px] text-muted">
-        {from} → {merchant?.payTo ?? "merchant"} → {merchant?.upiHandle ?? "UPI"}
+        {railOf(s) === "sepolia"
+          ? `${(s.payer ?? from).slice(0, 10)}… (your wallet) → ${s.merchant} deposit → ${merchant?.upiHandle ?? "UPI"}`
+          : `${from} → ${merchant?.payTo ?? "merchant"} → ${merchant?.upiHandle ?? "UPI"}`}
       </p>
       <ol className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-5">
         {steps.map((st) => (

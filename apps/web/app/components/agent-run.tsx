@@ -345,6 +345,7 @@ export function AgentRunOverlay({ state, onClose }: { state: AgentRunState | nul
               </ol>
               <div className="mt-4 min-h-[52px]">
                 <AnimatePresence mode="wait">{verdict && <VerdictBanner key={verdict.kind} verdict={verdict} />}</AnimatePresence>
+                {!verdict && <p className="text-center text-xs text-muted">Paying on chain — this step can take up to a minute. Don't close the page.</p>}
               </div>
             </div>
           </motion.div>
