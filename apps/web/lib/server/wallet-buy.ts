@@ -48,7 +48,7 @@ export async function walletBuy(me: SignedIn, body: { ensName?: string; url?: st
     // its shop verified, paying the shop's own address, at the ENS price.
     const payee = await assertFairInvoice({ payTo: record.evmPayTo, network: SEPOLIA_NETWORK, amount: amount.toString(), extra: { ensName } });
 
-    const { hash } = await agentPayFromWallet({ agentKey: buyerKey(me.identity.nullifier), owner, to: record.evmPayTo as Hex, amount });
+    const { hash, agent } = await agentPayFromWallet({ agentKey: buyerKey(me.identity.nullifier), owner, to: record.evmPayTo as Hex, amount });
 
     const product = shop !== ensName ? { ensName, title: (await readProductInfo(ensName).catch(() => null))?.title || ensName } : undefined;
     let settlement = null;
@@ -58,6 +58,7 @@ export async function walletBuy(me: SignedIn, body: { ensName?: string; url?: st
         hederaTxId: hash,
         rail: "sepolia",
         payer: owner,
+        agent,
         usdcAmount: amount.toString(),
         quotedInrPaise: record.priceInrPaise,
         ...(product ? { product } : {}),

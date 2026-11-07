@@ -51,6 +51,21 @@ const pause = () => {
 export class DuplicateSettlementError extends Error {}
 
 /** Record the notice and return the new row. Call runPipeline(row) afterwards (in after()). */
+/**
+ * Who started the payment, for the settlement and its HCS receipt. An x402
+ * payment is always signed by a machine client (the 402 → signed retry
+ * handshake has no human step), and its payer IS the signing agent account.
+ * A Sepolia wallet buy is signed by the buyer's agent spending the buyer's
+ * allowance (transferFrom), so the agent and the payer differ. A plain
+ * transfer seen landing in a deposit account can't be attributed: we don't
+ * claim an agent for it.
+ */
+function initiatorOf(notice: SettlementNotice): Pick<Settlement, "initiator" | "agent" | "agentMethod"> {
+  if (notice.source === "transfer") return { initiator: "wallet-transfer", agent: null, agentMethod: null };
+  if (railOf(notice) === "sepolia") return { initiator: "agent", agent: notice.agent ?? null, agentMethod: "erc20-allowance" };
+  return { initiator: "agent", agent: notice.agent ?? notice.payer ?? null, agentMethod: "x402" };
+}
+
 export async function acceptNotice(notice: SettlementNotice): Promise<Settlement> {
   if (findByTx(notice.hederaTxId)) throw new DuplicateSettlementError(`${notice.hederaTxId} already processed`);
   const now = new Date().toISOString();
@@ -78,6 +93,7 @@ export async function acceptNotice(notice: SettlementNotice): Promise<Settlement
     product: notice.product ?? null,
     source: notice.source ?? "x402",
     rail: railOf(notice),
+    ...initiatorOf(notice),
     status: "received",
     error: null,
     createdAt: now,
@@ -190,6 +206,12 @@ export async function runPipeline(start: Settlement): Promise<void> {
           id: s.id,
           merchant: s.merchant,
           hederaTxId: s.hederaTxId,
+          rail: s.rail ?? "hedera",
+          // Provably agentic: who signed it, and how. Checkable against the tx itself.
+          initiator: s.initiator ?? (s.source === "transfer" ? "wallet-transfer" : "agent"),
+          ...(s.agent ? { agent: s.agent } : {}),
+          ...(s.agentMethod ? { agentMethod: s.agentMethod } : {}),
+          payer: s.payer,
           usdcAmount: s.usdcAmount,
           fxRate: s.fxRate,
           inrGrossPaise: s.inrGrossPaise,

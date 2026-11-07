@@ -37,6 +37,17 @@ export type Settlement = {
   source?: "x402" | "transfer";
   /** Hedera (USDC over x402) or Sepolia (USDC from the buyer's own MetaMask). Missing on older rows: Hedera. */
   rail?: Rail;
+  /**
+   * Who started the payment. "agent": an AI agent signed it with its own key
+   * (an x402 payment, or the agent's transferFrom under the buyer's MetaMask
+   * allowance). "wallet-transfer": USDC simply landed in the merchant's
+   * deposit account, so Sangam can't say who sent it. Written to the HCS receipt.
+   */
+  initiator?: "agent" | "wallet-transfer";
+  /** The key that signed the payment when initiator is "agent": a Hedera account or the agent's EVM address. */
+  agent?: string | null;
+  /** How the agent paid: an x402 signed transfer, or transferFrom under an ERC-20 allowance. */
+  agentMethod?: "x402" | "erc20-allowance" | null;
   id: string;
   merchant: string;
   /** The payment transaction: a Hedera transaction id, or a Sepolia tx hash (0x…) when rail is "sepolia". */
@@ -98,6 +109,8 @@ export type SettlementNotice = {
   product?: { ensName: string; title: string };
   /** "sepolia" when the buyer's own wallet paid (hederaTxId is then a Sepolia tx hash). */
   rail?: Rail;
+  /** The agent that signed the payment, when it isn't the payer (Sepolia: the agent's address, spending the payer's allowance). */
+  agent?: string;
 };
 
 /** The ONDC side of a settlement: which seller, which order, where the rupees go. */

@@ -434,6 +434,20 @@ function Txn({ s, from, merchant }: { s: Settlement; from: string; merchant?: Me
         </a>
       ),
     },
+    ...(s.initiator === "agent"
+      ? [
+          {
+            label: "Signed by AI agent",
+            done: true,
+            detail: (
+              <>
+                {s.agentMethod === "erc20-allowance" ? "transferFrom under your allowance" : "x402 signed transfer"}
+                {s.agent ? <> · <span className="mono">{s.agent.length > 20 ? `${s.agent.slice(0, 10)}…${s.agent.slice(-4)}` : s.agent}</span></> : null}
+              </>
+            ),
+          },
+        ]
+      : []),
     { label: "Verified on chain", done: !!s.chainVerified, detail: s.chainVerified ? "Mirror Node: USDC landed" : s.status === "received" ? "checking…" : "skipped" },
     {
       label: "0G decision",
