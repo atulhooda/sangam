@@ -90,7 +90,8 @@ export async function POST(req: Request) {
 
     // On-chain proof the payment was agentic: the memo rides in the signed
     // transfer and shows on HashScan. 100 bytes max.
-    const { buy } = agent(guard, `Sangam AI agent | x402 | ${target} | buyer ${wallet.accountId}`);
+    const billedFor = typeof option?.extra?.ensName === "string" ? option.extra.ensName : target;
+    const { buy } = agent(guard, `Sangam AI agent | x402 | ${billedFor} | buyer ${wallet.accountId}`);
     let purchase = await buy<Record<string, unknown>>(url);
     if (purchase.status === 402) {
       // A top-up from seconds ago may not be visible to the facilitator's
