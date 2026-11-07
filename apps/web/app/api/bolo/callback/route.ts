@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { verify } from "@/lib/server/bolo-voice";
 import { completeVoiceSession, createBoloInvoice, getVoiceSession } from "@/lib/server/bolo";
+import { publicOrigin } from "@/lib/server/origin";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
       note: d.note,
       transcript: "(live conversation)",
     });
-    await completeVoiceSession(session.id, { status: "completed", invoiceId: invoice.id, payUrl: `${new URL(req.url).origin}/api/bolo/invoice/${invoice.id}` });
+    await completeVoiceSession(session.id, { status: "completed", invoiceId: invoice.id, payUrl: `${publicOrigin(req)}/api/bolo/invoice/${invoice.id}` });
     return NextResponse.json({ reply: "पे लिंक तैयार है। धन्यवाद!" });
   }
 

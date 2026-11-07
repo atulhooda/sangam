@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createBoloInvoice } from "@/lib/server/bolo";
 import { currentUser } from "@/lib/server/session";
+import { publicOrigin } from "@/lib/server/origin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     id: invoice.id,
     invoice,
-    payUrl: `${new URL(req.url).origin}/api/bolo/invoice/${invoice.id}`,
-    statusUrl: `${new URL(req.url).origin}/api/bolo/invoice/${invoice.id}/status`,
+    payUrl: `${publicOrigin(req)}/api/bolo/invoice/${invoice.id}`,
+    statusUrl: `${publicOrigin(req)}/api/bolo/invoice/${invoice.id}/status`,
   });
 }

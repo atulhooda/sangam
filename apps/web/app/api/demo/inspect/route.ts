@@ -3,6 +3,7 @@ import { formatUsdc, inrPerUsd, paiseToUsdcAtomic, usdcAtomicToPaise } from "@sa
 import { SHOPS, parseAttack, parseShop, type Check, type Inspection } from "@/lib/demo-shop";
 import { bakeryEnsName, merchantEnsName } from "@/lib/server/merchant";
 import type { Invoice } from "@/lib/types";
+import { publicOrigin } from "@/lib/server/origin";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +22,7 @@ export async function GET(req: Request) {
   // Behind Railway's proxy req.url is the internal URL, and the server is
   // IPv4-only, so a self-fetch on localhost/::1 fails. Rebuild the public
   // origin from the forwarded headers the way proxy.ts does.
-  const fwdHost = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  const fwdProto = req.headers.get("x-forwarded-proto") ?? "https";
-  const origin = fwdHost ? `${fwdProto}://${fwdHost}` : new URL(req.url).origin;
+  const origin = publicOrigin(req);
   const name = shop === "bakery" ? bakeryEnsName() : merchantEnsName();
 
   try {

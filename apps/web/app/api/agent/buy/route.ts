@@ -10,6 +10,7 @@ import { merchantEnsName, ondcGatewayName } from "@/lib/server/merchant";
 import { findByTx } from "@/lib/server/store";
 import { walletBuy } from "@/lib/server/wallet-buy";
 import type { Invoice } from "@/lib/types";
+import { publicOrigin } from "@/lib/server/origin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
   if (!me) return Response.json({ error: "Sign in as a buyer first." }, { status: 401 });
   const body = (await req.json().catch(() => ({}))) as { ensName?: string; url?: string; rail?: string };
   // From the buyer's own MetaMask (Sepolia), by ENS name: see lib/server/wallet-buy.ts.
-  if (body.rail === "sepolia") return walletBuy(me, body, new URL(req.url).origin);
+  if (body.rail === "sepolia") return walletBuy(me, body, publicOrigin(req));
 
   const wallet = me.identity.wallet;
   if (!wallet) return Response.json({ error: "Connect your agent wallet first." }, { status: 400 });
@@ -49,7 +50,7 @@ export async function POST(req: Request) {
   let target: string;
   if ((body.url ?? "").trim()) {
     try {
-      url = await parseAgentUrl(body.url!.trim(), new URL(req.url).origin);
+      url = await parseAgentUrl(body.url!.trim(), publicOrigin(req));
     } catch (err) {
       if (err instanceof BadBuyUrlError) return Response.json({ error: err.message }, { status: 422 });
       throw err;

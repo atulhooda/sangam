@@ -11,6 +11,7 @@ import { currentUser } from "@/lib/server/session";
 import { createAgentBuyer, explorerUrl } from "@/lib/server/rails";
 import { findByTx } from "@/lib/server/store";
 import type { Invoice } from "@/lib/types";
+import { publicOrigin } from "@/lib/server/origin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -64,7 +65,7 @@ export async function POST(req: Request) {
       guard,
       memo,
     });
-  const origin = new URL(req.url).origin;
+  const origin = publicOrigin(req);
 
   let url: URL;
   let what: string;

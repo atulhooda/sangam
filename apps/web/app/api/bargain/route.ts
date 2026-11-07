@@ -4,6 +4,7 @@ import { flag } from "@sangam/shared";
 import { DEFAULT_BARGAIN_BPS, resolveMerchant } from "@sangam/ens";
 import { requireBuyer } from "@/lib/server/buyer";
 import { createBoloInvoice } from "@/lib/server/bolo";
+import { publicOrigin } from "@/lib/server/origin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -75,6 +76,6 @@ export async function POST(req: NextRequest) {
       provider: process.env.OG_PROVIDER_ADDRESS ?? null,
     },
     invoiceId: invoice.id,
-    payUrl: `${new URL(req.url).origin}/api/bolo/invoice/${invoice.id}`,
+    payUrl: `${publicOrigin(req)}/api/bolo/invoice/${invoice.id}`,
   });
 }
