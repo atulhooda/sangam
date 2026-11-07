@@ -110,11 +110,11 @@ export function BargainButton({ ensName, disabled, onDone }: { ensName: string; 
       {open && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-4 backdrop-blur-sm sm:items-center" onClick={close}>
           <div
-            className="w-full max-w-md overflow-hidden rounded-3xl border border-line bg-surface shadow-2xl"
+            className="flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-line bg-surface shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* header */}
-            <div className="flex items-center justify-between border-b border-line px-5 py-4">
+            <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-4">
               <div>
                 <p className="mono text-sm font-semibold text-accent">{ensName}</p>
                 <p className="text-xs text-muted">
@@ -124,8 +124,8 @@ export function BargainButton({ ensName, disabled, onDone }: { ensName: string; 
               <button onClick={close} aria-label="Close" className="rounded-full p-1 text-muted transition-colors hover:text-ink">✕</button>
             </div>
 
-            {/* tug-of-war arena */}
-            <div className="px-5 py-4">
+            {/* tug-of-war arena: scrolls inside the modal so the actions stay on screen */}
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
               {data ? (
                 <BargainArena data={data} shown={shown} done={phase === "dealt" || phase === "paying" || phase === "paid"} og={data.og} />
               ) : (
@@ -137,8 +137,8 @@ export function BargainButton({ ensName, disabled, onDone }: { ensName: string; 
               {error && <p className="mt-3 rounded-xl bg-badbg px-3 py-2 text-sm text-bad">{error}</p>}
             </div>
 
-            {/* actions */}
-            <div className="border-t border-line px-5 py-4">
+            {/* actions: pinned to the bottom of the modal */}
+            <div className="shrink-0 border-t border-line bg-surface px-5 py-4">
               {phase === "dealt" && data && (
                 <button onClick={() => void pay()} className="w-full rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 dark:text-[#0b0d1a]">
                   Pay {rupees(data.agreedPaise)} as agent →

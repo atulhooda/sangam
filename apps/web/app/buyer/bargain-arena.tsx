@@ -139,7 +139,7 @@ export function BargainArena({ data, shown, done, og }: { data: BargainData; sho
       </div>
 
       {/* the full haggle, offer by offer, tagged with the engine that made it */}
-      <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
+      <div className="max-h-36 space-y-1.5 overflow-y-auto pr-1">
         {revealed.map((t, i) => {
           const buyer = t.by === "buyer";
           return (
