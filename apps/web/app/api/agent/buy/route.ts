@@ -87,7 +87,14 @@ export async function POST(req: Request) {
     }
 
     const { buy } = agent(guard);
-    const purchase = await buy<Record<string, unknown>>(url);
+    let purchase = await buy<Record<string, unknown>>(url);
+    if (purchase.status === 402) {
+      // A top-up from seconds ago may not be visible to the facilitator's
+      // mirror-node view yet; one short retry covers "funded, then bought
+      // immediately" instead of failing with a confusing 402.
+      await new Promise((r) => setTimeout(r, 4_000));
+      purchase = await buy<Record<string, unknown>>(url);
+    }
     if (purchase.status >= 400 || !purchase.settle?.success) {
       const reason = (purchase.body as { error?: string } | null)?.error;
       return Response.json({ error: `${target} answered ${purchase.status}${reason ? `: ${reason}` : ""}. Is your wallet funded?` }, { status: 502 });
