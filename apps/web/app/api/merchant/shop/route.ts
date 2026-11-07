@@ -1,5 +1,5 @@
 import { encodeFunctionData } from "viem";
-import { RESOLVER_ABI, forgetMerchant, issueSubname, merchantRecordCalls, parentName, resolveMerchant, sepoliaClient } from "@sangam/ens";
+import { DEFAULT_BARGAIN_BPS, MAX_BARGAIN_BPS, RESOLVER_ABI, forgetMerchant, issueSubname, merchantRecordCalls, parentName, resolveMerchant, sepoliaClient } from "@sangam/ens";
 import { updateMerchantShop } from "@/lib/server/identity";
 import { currentUser, otherRole, publicMe } from "@/lib/server/session";
 
@@ -7,11 +7,19 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 /*
- * A verified merchant edits its own price and UPI handle from its profile.
- * Both live in the merchant's ENS record, which buyer agents check every
- * invoice against, so saving rewrites the record on chain (one transaction)
- * and clears Sangam's ENS cache: agents see the new price straight away.
+ * A verified merchant edits its own price, UPI handle and ± haggling margin
+ * from its profile. All three live in the merchant's ENS record, which buyer
+ * agents check every invoice against, so saving rewrites the record on chain
+ * (one transaction) and clears Sangam's ENS cache: agents see the new price
+ * straight away. The margin is entered in rupees ("±₹5") and stored as
+ * sangam.bargain in basis points of the price, the unit agents read.
  */
+
+/** "± ₹5" on a ₹100 price → 500 bps, clamped to the published cap (±50%). */
+function bargainBpsFrom(bargainInr: number, priceInr: number): number {
+  const bps = Math.round((bargainInr / priceInr) * 10_000);
+  return Math.max(0, Math.min(MAX_BARGAIN_BPS, bps));
+}
 
 const g = globalThis as unknown as { __sangamShopEdits?: Set<string> };
 const running = (g.__sangamShopEdits ??= new Set());
@@ -24,7 +32,7 @@ export async function PATCH(req: Request) {
     return Response.json({ error: "Your ENS name isn't set up yet. Finish setup on your profile first." }, { status: 409 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { priceInr?: unknown; upiHandle?: unknown; txHash?: unknown };
+  const body = (await req.json().catch(() => ({}))) as { priceInr?: unknown; upiHandle?: unknown; bargainInr?: unknown; txHash?: unknown };
 
   // A merchant that owns its name signs its own changes. Step 2: the wallet sent
   // the transaction; check it on chain and refresh the profile from ENS.
@@ -35,15 +43,16 @@ export async function PATCH(req: Request) {
       // Public RPCs lag a block or two: wait until ENS shows what was just written.
       const wantPrice = Math.round(Number(body.priceInr) * 100);
       const wantUpi = String(body.upiHandle ?? "").trim().toLowerCase();
+      const wantBps = body.bargainInr === undefined ? null : bargainBpsFrom(Number(body.bargainInr), Number(body.priceInr));
       let rec = null;
       for (let i = 0; i < 12; i++) {
         forgetMerchant(me.identity.label);
         rec = await resolveMerchant(me.identity.label).catch(() => null);
-        if (rec && rec.priceInrPaise === wantPrice && rec.upiHandle === wantUpi) break;
+        if (rec && rec.priceInrPaise === wantPrice && rec.upiHandle === wantUpi && (wantBps === null || rec.bargainBps === wantBps)) break;
         await new Promise((r) => setTimeout(r, 3000));
       }
       if (!rec) throw new Error("couldn't read your updated records yet; refresh in a moment");
-      const identity = await updateMerchantShop(me.identity.nullifier, { priceInrPaise: rec.priceInrPaise, upiHandle: rec.upiHandle });
+      const identity = await updateMerchantShop(me.identity.nullifier, { priceInrPaise: rec.priceInrPaise, upiHandle: rec.upiHandle, bargainBps: rec.bargainBps });
       return Response.json({ ok: true, txs: [{ step: "update (your wallet)", tx: body.txHash }], me: publicMe(identity, otherRole(me)) });
     } catch (err) {
       return Response.json({ error: (err as Error).message.split("\n")[0] }, { status: 502 });
@@ -57,8 +66,13 @@ export async function PATCH(req: Request) {
   if (!/^[a-z0-9._-]{2,64}@[a-z0-9]{2,32}$/.test(upiHandle)) {
     return Response.json({ error: "Enter the UPI handle payouts go to, e.g. myshop@okaxis." }, { status: 400 });
   }
+  const bargainInr = body.bargainInr === undefined ? null : Number(body.bargainInr);
+  if (bargainInr !== null && (!Number.isFinite(bargainInr) || bargainInr < 0 || bargainInr > priceInr / 2)) {
+    return Response.json({ error: `Enter a haggling margin between ₹0 and half your price (₹${(priceInr / 2).toFixed(2)}).` }, { status: 400 });
+  }
+  const bargainBps = bargainInr === null ? (shop.bargainBps ?? DEFAULT_BARGAIN_BPS) : bargainBpsFrom(bargainInr, priceInr);
   const priceInrPaise = Math.round(priceInr * 100);
-  if (priceInrPaise === shop.priceInrPaise && upiHandle === shop.upiHandle) {
+  if (priceInrPaise === shop.priceInrPaise && upiHandle === shop.upiHandle && bargainBps === (shop.bargainBps ?? DEFAULT_BARGAIN_BPS)) {
     return Response.json({ ok: true, unchanged: true, me: publicMe(me.identity, otherRole(me)) });
   }
 
@@ -77,6 +91,7 @@ export async function PATCH(req: Request) {
         merchantRecordCalls([
           { name, key: "sangam.priceInrPaise", value: String(priceInrPaise) },
           { name, key: "sangam.upi", value: upiHandle },
+          { name, key: "sangam.bargain", value: String(bargainBps) },
         ]),
       ],
     });
@@ -93,11 +108,13 @@ export async function PATCH(req: Request) {
       priceInrPaise,
       upiHandle,
       status: "verified",
+      bargainBps,
     });
     forgetMerchant(name);
     const identity = await updateMerchantShop(me.identity.nullifier, {
       priceInrPaise,
       upiHandle,
+      bargainBps,
       ensTxs: [...(shop.ensTxs ?? []), ...issued.txs.map((t) => ({ step: `update ${new Date().toISOString().slice(0, 16).replace("T", " ")}`, tx: t.tx }))].slice(-6),
     });
     return Response.json({ ok: true, txs: issued.txs, offline: issued.offline, me: publicMe(identity, otherRole(me)) });

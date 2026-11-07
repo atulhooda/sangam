@@ -43,6 +43,8 @@ export type MerchantCert = {
 export type MerchantShop = {
   upiHandle: string;
   priceInrPaise: number;
+  /** The merchant's ± haggling band (sangam.bargain), in bps of the price. */
+  bargainBps?: number;
   /** The merchant's own x402 endpoint, if it has one; otherwise Sangam's pay link. */
   endpoint: string | null;
   /** Its own Hedera account (sangam.payTo). Created once, kept across retries. */

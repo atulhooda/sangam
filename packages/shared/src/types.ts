@@ -17,9 +17,10 @@ export type MerchantRecord = {
    */
   status?: string;
   /**
-   * sangam.bargain: how far the merchant's agent will haggle below priceInrPaise,
-   * in basis points (500 = 5%). resolveMerchant fills the default when the record
-   * is absent, so this is always set after a lookup.
+   * sangam.bargain: the merchant's ± haggling band around priceInrPaise, in
+   * basis points (500 = ±5%): its agent opens at price + margin and may
+   * concede to price − margin. resolveMerchant fills the default when the
+   * record is absent, so this is always set after a lookup.
    */
   bargainBps?: number;
 };

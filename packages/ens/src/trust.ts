@@ -130,8 +130,12 @@ export type FairPayee = TrustedPayee & {
  * The stricter check for fixed-price merchants: everything assertVerifiedPayee
  * checks, plus the amount. The invoice may not ask for more than the price in
  * the merchant's ENS record (converted at the current rate, within
- * PRICE_TOLERANCE_BPS). A hacked shop backend can show ₹49 on its page and bill
- * ₹490 in its 402; the agent compares the bill with ENS and refuses to sign.
+ * PRICE_TOLERANCE_BPS) plus the merchant's published haggle margin
+ * (sangam.bargain, a ± band around the price that agent-to-agent bargaining
+ * may settle inside — see @sangam/og negotiate). Both numbers come from ENS,
+ * so the ceiling is still entirely merchant-published: a hacked shop backend
+ * can show ₹49 on its page and bill ₹490 in its 402; the agent compares the
+ * bill with ENS and refuses to sign.
  *
  * Not for catalogue merchants (ONDC), whose price depends on the order.
  */
@@ -141,12 +145,12 @@ export async function assertFairInvoice(invoice: InvoiceOption): Promise<FairPay
   const rate = await inrPerUsd();
   const ensAtomic = paiseToUsdcAtomic(record.priceInrPaise, rate);
   const billed = BigInt(invoice.amount);
-  const ceiling = (ensAtomic * BigInt(10_000 + PRICE_TOLERANCE_BPS)) / 10_000n;
+  const ceiling = (ensAtomic * BigInt(10_000 + PRICE_TOLERANCE_BPS + (record.bargainBps ?? 0))) / 10_000n;
   if (billed > ceiling) {
     const billedInr = usdcAtomicToPaise(billed, rate) / 100;
     const token = "USDC";
     throw new UntrustedPayeeError(
-      `Refused: the invoice asks for ${formatUsdc(billed)} ${token} (about ₹${billedInr.toFixed(2)}), but ${payee.ensName}'s ENS record says the price is ₹${(record.priceInrPaise / 100).toFixed(2)} (${formatUsdc(ensAtomic)} ${token}). The shop's backend is billing more than its published price.`,
+      `Refused: the invoice asks for ${formatUsdc(billed)} ${token} (about ₹${billedInr.toFixed(2)}), but ${payee.ensName}'s ENS record says the price is ₹${(record.priceInrPaise / 100).toFixed(2)} (${formatUsdc(ensAtomic)} ${token}), haggling margin included. The shop's backend is billing more than its published price.`,
       "price-mismatch",
     );
   }

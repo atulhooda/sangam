@@ -41,6 +41,8 @@ type Merchant = {
   url?: string;
   priceInrPaise?: number;
   priceUsdcAtomic?: string;
+  /** ± haggling band published on ENS, in bps of the price. */
+  bargainBps?: number | null;
   payTo?: string;
   upiHandle?: string;
   status?: string | null;
@@ -319,7 +321,13 @@ export function BuyerDesk({ me }: { me: Me }) {
                   {!m.error && (
                     <>
                       <span className="text-sm tabular-nums">
-                        {rupees(m.priceInrPaise ?? 0)} <span className="text-xs text-muted">≈ {usdc(m.priceUsdcAtomic ?? "0", 2)} USDC</span>
+                        {rupees(m.priceInrPaise ?? 0)}
+                        {typeof m.bargainBps === "number" && m.bargainBps > 0 && (
+                          <span className="text-xs text-muted" title="The merchant's published haggling band on ENS — a bargained deal always lands inside it">
+                            {" "}± {rupees(Math.round(((m.priceInrPaise ?? 0) * m.bargainBps) / 10_000))}
+                          </span>
+                        )}{" "}
+                        <span className="text-xs text-muted">≈ {usdc(m.priceUsdcAtomic ?? "0", 2)} USDC</span>
                       </span>
                       {m.verified ? (
                         <span className="rounded-full bg-okbg px-2 py-0.5 text-[11px] font-medium text-ok">verified</span>

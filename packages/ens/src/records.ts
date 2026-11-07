@@ -19,11 +19,13 @@ export const STATUS_TEXT_KEY = "sangam.status";
 export type MerchantStatus = "verified" | "suspended";
 
 /**
- * Optional record: how much the merchant's agent will haggle down from its
- * published price, in basis points (500 = 5%). The floor an agreed price may
- * reach is priceInrPaise × (1 − bargain/10000). Missing → DEFAULT_BARGAIN_BPS.
- * Capped so bargaining can only ever be a discount below the ENS price, which
- * keeps the "never bill above the ENS price" guarantee intact.
+ * Optional record: the merchant's ± haggling band around its published price,
+ * in basis points (500 = ±5%). Its agent opens at priceInrPaise × (1 +
+ * bargain/10000) and may concede down to priceInrPaise × (1 − bargain/10000);
+ * an agreed price always lands inside that band. Missing →
+ * DEFAULT_BARGAIN_BPS. Because the margin itself is published on ENS, the
+ * buyer agent's fair-invoice ceiling (price + margin) is still entirely
+ * merchant-published — a hacked backend billing beyond it is refused.
  */
 export const BARGAIN_TEXT_KEY = "sangam.bargain";
 export const DEFAULT_BARGAIN_BPS = 500;

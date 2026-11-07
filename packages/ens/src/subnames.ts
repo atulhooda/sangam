@@ -5,7 +5,7 @@ import { normalize, packetToBytes } from "viem/ens";
 import { REPO_ROOT, flag, type MerchantRecord } from "@sangam/shared";
 import { sepoliaClient } from "./client.ts";
 import { ENSV2_SEPOLIA, REGISTRY_ABI, REGISTRY_ROLES, RESOLVER_ABI } from "./contracts.ts";
-import { EVM_COIN_TYPES, MERCHANT_FIELDS, MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY, type MerchantStatus } from "./records.ts";
+import { BARGAIN_TEXT_KEY, EVM_COIN_TYPES, MERCHANT_FIELDS, MERCHANT_TEXT_KEYS, STATUS_TEXT_KEY, type MerchantStatus } from "./records.ts";
 import { forgetMerchant } from "./resolve.ts";
 import { parentName, sangamContracts, sangamWallet } from "./wallet.ts";
 
@@ -67,6 +67,7 @@ export async function issueSubname(label: string, merchant: MerchantInput, log: 
     all[name] = {
       ...values,
       ...(merchant.status ? { status: merchant.status } : {}),
+      ...(typeof merchant.bargainBps === "number" ? { bargain: String(merchant.bargainBps) } : {}),
     };
     writeFileSync(file, `${JSON.stringify(all, null, 2)}\n`);
     forgetMerchant(name);
@@ -114,6 +115,9 @@ export async function issueSubname(label: string, merchant: MerchantInput, log: 
   );
   if (merchant.status) {
     calls.push(encodeFunctionData({ abi: RESOLVER_ABI, functionName: "setText", args: [dnsName, STATUS_TEXT_KEY, merchant.status] }));
+  }
+  if (typeof merchant.bargainBps === "number") {
+    calls.push(encodeFunctionData({ abi: RESOLVER_ABI, functionName: "setText", args: [dnsName, BARGAIN_TEXT_KEY, String(Math.round(merchant.bargainBps))] }));
   }
   if (merchant.evmPayTo) {
     for (const coinType of EVM_COIN_TYPES) {

@@ -162,6 +162,7 @@ export function publicMe(identity: VerifiedIdentity, switchTo: Role | null = nul
       ? {
           upiHandle: identity.shop.upiHandle,
           priceInrPaise: identity.shop.priceInrPaise,
+          bargainBps: identity.shop.bargainBps,
           endpoint: identity.shop.endpoint,
           depositAccountId: identity.shop.depositAccountId ?? null,
           owned: identity.shop.owned ? { owner: identity.shop.owned.owner, resolver: identity.shop.owned.resolver, at: identity.shop.owned.at } : null,

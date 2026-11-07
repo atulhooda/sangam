@@ -6,19 +6,28 @@ import { Spinner } from "../../components/ui";
 import { connectWallet, injected, sendAndWait, walletError } from "@/lib/wallet-client";
 
 /*
- * The merchant's price and UPI handle, editable from the profile. Both are
- * part of the merchant's ENS record, which buyer agents compare every invoice
- * with, so saving writes them to ENS (one Sepolia transaction).
+ * The merchant's price, UPI handle and ± haggling margin, editable from the
+ * profile. All three are part of the merchant's ENS record, which buyer
+ * agents compare every invoice with, so saving writes them to ENS (one
+ * Sepolia transaction). The margin is the "±5" of street bargaining: your
+ * agent opens at price + margin and may concede down to price − margin when
+ * a buyer's agent haggles with it.
  */
+const DEFAULT_BARGAIN_BPS = 500;
+
 export function ShopSettings({ me, onSaved }: { me: Me; onSaved: (me: Me) => void }) {
   const shop = me.shop!;
   const [price, setPrice] = useState(String(shop.priceInrPaise / 100));
   const [upi, setUpi] = useState(shop.upiHandle);
+  const savedMarginRs = (shop.priceInrPaise * (shop.bargainBps ?? DEFAULT_BARGAIN_BPS)) / 10_000 / 100;
+  const [margin, setMargin] = useState(savedMarginRs.toFixed(2).replace(/\.?0+$/, ""));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<{ tx: string | null; at: string } | null>(null);
 
-  const dirty = Number(price) * 100 !== shop.priceInrPaise || upi.trim().toLowerCase() !== shop.upiHandle;
+  const priceRs = Number(price) || 0;
+  const marginRs = Math.max(0, Math.min(Number(margin) || 0, priceRs / 2));
+  const dirty = Number(price) * 100 !== shop.priceInrPaise || upi.trim().toLowerCase() !== shop.upiHandle || Math.abs(marginRs - savedMarginRs) > 0.004;
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -30,7 +39,7 @@ export function ShopSettings({ me, onSaved }: { me: Me; onSaved: (me: Me) => voi
         fetch("/api/merchant/shop", {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ priceInr: Number(price), upiHandle: upi, ...extra }),
+          body: JSON.stringify({ priceInr: Number(price), upiHandle: upi, bargainInr: marginRs, ...extra }),
         });
       let res = await patch({});
       let body = (await res.json()) as { me?: Me; txs?: { tx: string }[]; offline?: boolean; error?: string; sign?: { from: string; to: string; data: string } };
@@ -62,10 +71,14 @@ export function ShopSettings({ me, onSaved }: { me: Me; onSaved: (me: Me) => voi
         <p className="text-sm font-medium">Price and payouts</p>
         <p className="text-[11px] text-muted">Saved to your ENS record</p>
       </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
         <div>
           <label htmlFor="shop-price" className="mb-1 block text-xs text-muted">Price per order (₹)</label>
           <input id="shop-price" type="number" min={1} max={100000} step="0.01" required value={price} disabled={busy} onChange={(e) => setPrice(e.target.value)} className={input} />
+        </div>
+        <div>
+          <label htmlFor="shop-margin" className="mb-1 block text-xs text-muted">Haggling margin (± ₹)</label>
+          <input id="shop-margin" type="number" min={0} max={priceRs / 2 || undefined} step="0.01" value={margin} disabled={busy} onChange={(e) => setMargin(e.target.value)} className={input} />
         </div>
         <div>
           <label htmlFor="shop-upi" className="mb-1 block text-xs text-muted">UPI handle for payouts</label>
@@ -73,7 +86,12 @@ export function ShopSettings({ me, onSaved }: { me: Me; onSaved: (me: Me) => voi
         </div>
       </div>
       <p className="mt-3 text-xs text-muted">
-        Agents refuse any bill above the price on ENS, so change it here before you change your checkout.
+        {marginRs > 0 && priceRs > 0 ? (
+          <>Your agent opens at ₹{(priceRs + marginRs).toFixed(2)} and bargains down to ₹{(priceRs - marginRs).toFixed(2)} at most — a deal always lands in that band. </>
+        ) : (
+          <>Haggling is off: your agent quotes ₹{priceRs.toFixed(2)}, take it or leave it. </>
+        )}
+        Agents refuse any bill above the price + margin on ENS, so change it here before you change your checkout.
       </p>
       {error && <p role="alert" className="mt-3 rounded-lg bg-badbg px-3 py-2 text-sm text-bad">{error}</p>}
       {saved && (

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Spinner } from "../components/ui";
 import { AgentRunOverlay, runPayAsAgent, useAgentRun } from "../components/agent-run";
 import { rupees } from "../dashboard/format";
-import { BargainArena } from "./bargain-arena";
+import { BargainArena, OgComputeBadge, type OgInfo } from "./bargain-arena";
 
 /*
  * Agent-to-agent bargaining, as the buyer sees it. Click "Bargain" on a
@@ -14,15 +14,19 @@ import { BargainArena } from "./bargain-arena";
  * buyer pays the agreed (discounted) price through the normal pipeline.
  */
 
-type Turn = { by: "buyer" | "merchant"; offerPaise: number; message: string };
+type Turn = { by: "buyer" | "merchant"; offerPaise: number; message: string; via?: "0g" | "local" };
 type BargainResult = {
   listPaise: number;
+  askPaise: number;
   floorPaise: number;
   agreedPaise: number;
   savedPaise: number;
   savedBps: number;
+  vsListPaise: number;
   bargainBps: number;
   usedModel: boolean;
+  ogTurns?: number;
+  og?: OgInfo;
   rounds: Turn[];
   payUrl: string;
 };
@@ -123,9 +127,12 @@ export function BargainButton({ ensName, disabled, onDone }: { ensName: string; 
             {/* tug-of-war arena */}
             <div className="px-5 py-4">
               {data ? (
-                <BargainArena data={data} shown={shown} done={phase === "dealt" || phase === "paying" || phase === "paid"} />
+                <BargainArena data={data} shown={shown} done={phase === "dealt" || phase === "paying" || phase === "paid"} og={data.og} />
               ) : (
-                <p className="flex items-center justify-center gap-2 py-8 text-sm text-muted"><Spinner /> Agents are sizing each other up…</p>
+                <div className="space-y-3 py-4">
+                  <p className="flex items-center justify-center gap-2 py-4 text-sm text-muted"><Spinner /> Agents are sizing each other up…</p>
+                  <OgComputeBadge data={null} done={false} />
+                </div>
               )}
               {error && <p className="mt-3 rounded-xl bg-badbg px-3 py-2 text-sm text-bad">{error}</p>}
             </div>
@@ -140,7 +147,7 @@ export function BargainButton({ ensName, disabled, onDone }: { ensName: string; 
               {phase === "paying" && <p className="flex items-center justify-center gap-2 text-sm text-muted"><Spinner /> Signing USDC on Hedera…</p>}
               {phase === "paid" && <p className="text-center text-sm font-medium text-ok">Paid {data && rupees(data.agreedPaise)} — settlement is running below. 🎉</p>}
               {phase === "error" && <button onClick={() => void start()} className="w-full rounded-full border border-line px-5 py-2.5 text-sm font-medium transition-colors hover:border-accent">Try again</button>}
-              {phase === "negotiating" && <p className="text-center text-xs text-muted">Discount capped at the merchant's ENS margin — the deal is always below the list price.</p>}
+              {phase === "negotiating" && <p className="text-center text-xs text-muted">The merchant's agent opens at list + margin and the deal always lands inside its published ± band on ENS.</p>}
             </div>
           </div>
         </div>

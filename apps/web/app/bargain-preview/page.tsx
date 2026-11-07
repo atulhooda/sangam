@@ -60,7 +60,7 @@ export default function BargainPreviewPage() {
       <div className="mx-auto max-w-lg space-y-5">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Agents bargaining — preview</h1>
-          <p className="mt-1 text-sm text-muted">Two agents haggle over the price, capped at the merchant's margin. No login, no payment — just the negotiation.</p>
+          <p className="mt-1 text-sm text-muted">Two agents haggle over the price: the merchant's opens at list + margin and the deal lands inside its ± band. No login, no payment — just the negotiation.</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3 rounded-2xl border border-line bg-surface p-4">
@@ -70,7 +70,7 @@ export default function BargainPreviewPage() {
           <label className="text-xs text-muted">List price (₹)
             <input type="number" value={priceRs} min={1} onChange={(e) => setPriceRs(Number(e.target.value))} className="mt-1 w-full rounded-lg border border-line bg-surface2 px-3 py-2 text-sm text-ink outline-none focus:border-accent" />
           </label>
-          <label className="text-xs text-muted">Merchant margin (%)
+          <label className="text-xs text-muted">Merchant margin (± %)
             <input type="number" value={marginPct} min={0} max={50} onChange={(e) => setMarginPct(Number(e.target.value))} className="mt-1 w-full rounded-lg border border-line bg-surface2 px-3 py-2 text-sm text-ink outline-none focus:border-accent" />
           </label>
           <label className="col-span-2 flex items-center gap-2 text-xs text-muted">

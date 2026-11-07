@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { negotiate } from "@sangam/og";
+import { flag } from "@sangam/shared";
 import { DEFAULT_BARGAIN_BPS, resolveMerchant } from "@sangam/ens";
 import { requireBuyer } from "@/lib/server/buyer";
 import { createBoloInvoice } from "@/lib/server/bolo";
@@ -9,11 +10,12 @@ export const maxDuration = 60;
 
 /*
  * Agent-to-agent bargaining. The buyer agent asks for a merchant's price, the
- * merchant's agent quotes its ENS list price, and the two haggle (0G Compute,
- * or the deterministic fallback) within the merchant's published margin
- * (sangam.bargain, default 5%). Because the agreed price can only ever be a
- * DISCOUNT below the ENS list price, the buyer agent's "never pay above the ENS
- * price" check (assertFairInvoice) still passes on the final invoice.
+ * merchant's agent opens at list + margin, and the two haggle (0G Compute, or
+ * the deterministic fallback) within the merchant's published ± margin
+ * (sangam.bargain, default ±5%). Because the agreed price always lands inside
+ * that merchant-published band, the buyer agent's fair-invoice check
+ * (assertFairInvoice, whose ceiling is the ENS price + the same published
+ * margin) still passes on the final invoice.
  *
  * On a deal we mint a Bolo-style invoice at the agreed price (pinned to HCS
  * with the transcript) and return its pay link, so the buyer pays it through
@@ -49,20 +51,29 @@ export async function POST(req: NextRequest) {
     buyerName: me.identity.disclosed?.name || "AI buyer agent",
     amountPaise: result.agreedPaise,
     dueDays: null,
-    note: `Bargained ₹${(listPaise / 100).toFixed(2)} → ₹${(result.agreedPaise / 100).toFixed(2)} (saved ${(result.savedBps / 100).toFixed(1)}%)`,
+    note: `Bargained ₹${(result.askPaise / 100).toFixed(2)} → ₹${(result.agreedPaise / 100).toFixed(2)} (saved ${(result.savedBps / 100).toFixed(1)}%, list ₹${(listPaise / 100).toFixed(2)})`,
     transcript,
   });
 
   return NextResponse.json({
     ensName,
     listPaise: result.listPaise,
+    askPaise: result.askPaise,
     floorPaise: result.floorPaise,
     agreedPaise: result.agreedPaise,
     savedPaise: result.savedPaise,
     savedBps: result.savedBps,
+    vsListPaise: result.vsListPaise,
     bargainBps,
     usedModel: result.usedModel,
     rounds: result.rounds,
+    // What decided the offers, so the UI can show the 0G Compute engine honestly.
+    og: {
+      live: !flag("OG_MOCK"),
+      turns: result.ogTurns,
+      verified: result.usedModel,
+      provider: process.env.OG_PROVIDER_ADDRESS ?? null,
+    },
     invoiceId: invoice.id,
     payUrl: `${new URL(req.url).origin}/api/bolo/invoice/${invoice.id}`,
   });

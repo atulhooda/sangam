@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import OpenAI from "openai";
 import { z } from "zod";
 import { env, flag } from "@sangam/shared";
@@ -9,25 +8,34 @@ import { getBroker } from "./broker.ts";
  * decide.ts. Each side (buyer / merchant) gets one 0G chat turn at a time and
  * proposes its next offer with a one-line message. OG_MOCK=true (or any 0G
  * error / bad JSON / timeout) falls back to a deterministic concession curve,
- * so a demo always converges.
+ * so a demo always converges. Every turn says which engine produced it (via).
  *
- * Guardrails live in negotiate(), not the model: every offer is clamped into
- * [floorPaise, listPaise] and forced to move toward a deal, and the last round
- * settles. So 0G can reason and banter, but the price can never leave the band
- * — the agreed price stays a discount below the ENS list price, which keeps the
- * buyer agent's "never pay above the ENS price" guarantee intact.
+ * The merchant publishes a ± margin on ENS (sangam.bargain): its agent OPENS
+ * at list + margin (the ask) and may concede down to list − margin (the
+ * floor). Guardrails live in negotiate(), not the model: every offer is
+ * clamped into [floorPaise, askPaise] and forced to move toward a deal, and
+ * the last round settles. So 0G can reason and banter, but the price can
+ * never leave the merchant's published band — which is why the buyer agent's
+ * fair-invoice check accepts the deal (see @sangam/ens assertFairInvoice: its
+ * ceiling is the ENS price plus this same published margin).
  */
 
 export type BargainSide = "buyer" | "merchant";
 
-export type BargainTurn = { by: BargainSide; offerPaise: number; message: string };
+export type BargainTurn = {
+  by: BargainSide;
+  offerPaise: number;
+  message: string;
+  /** Which engine produced this offer: a verified 0G chat turn, or the local curve. */
+  via: "0g" | "local";
+};
 
 export type NegotiationInput = {
   /** Product / merchant display name, for the model and the transcript. */
   product: string;
-  /** ENS list price in paise — the ceiling; an agreed price can only go below. */
+  /** ENS list price in paise — the centre of the band. */
   listPaise: number;
-  /** How far the merchant will drop, in basis points (500 = 5%). */
+  /** The merchant's published ± margin, in basis points (500 = ±5%). */
   bargainBps: number;
   /** How many buyer↔merchant exchanges (default 3). */
   maxRounds?: number;
@@ -37,13 +45,21 @@ export type NegotiationInput = {
 
 export type Negotiation = {
   listPaise: number;
+  /** The merchant agent's opening quote: list + margin. */
+  askPaise: number;
+  /** The lowest the merchant agent may go: list − margin. */
   floorPaise: number;
   agreedPaise: number;
+  /** Haggled off the opening ask. */
   savedPaise: number;
   savedBps: number;
+  /** Positive when the deal landed below the ENS list price. */
+  vsListPaise: number;
   rounds: BargainTurn[];
   /** true when at least one turn came from a verified 0G reply. */
   usedModel: boolean;
+  /** How many offers 0G Compute decided (the rest used the local curve). */
+  ogTurns: number;
 };
 
 const OfferSchema = z.object({
@@ -57,6 +73,7 @@ type TurnCtx = {
   side: BargainSide;
   product: string;
   listPaise: number;
+  askPaise: number;
   floorPaise: number;
   round: number;
   maxRounds: number;
@@ -68,8 +85,8 @@ const rupees = (paise: number) => `₹${(paise / 100).toFixed(2)}`;
 
 const systemPrompt = (c: TurnCtx) =>
   c.side === "merchant"
-    ? `You are the Indian merchant's negotiation agent for "${c.product}". Your published price is ${rupees(c.listPaise)}. You may discount down to, but NEVER below, ${rupees(c.floorPaise)}. Start near your price and give a little each round. Reply ONLY JSON {"offerPaise":<int paise>,"message":"<short friendly Hinglish line>","accept":<bool>}. Set accept=true only if the buyer's last offer is at or above a price you're happy with.`
-    : `You are the buyer agent haggling for "${c.product}". The seller's published price is ${rupees(c.listPaise)}; you want the best discount but will never offer above ${rupees(c.listPaise)}. Open low and rise a little each round. Reply ONLY JSON {"offerPaise":<int paise>,"message":"<short polite Hinglish line>","accept":<bool>}. Set accept=true only if the merchant's last offer is low enough to be a good deal.`;
+    ? `You are the Indian merchant's negotiation agent for "${c.product}". Your list price is ${rupees(c.listPaise)}; you opened high at ${rupees(c.askPaise)} and may discount down to, but NEVER below, ${rupees(c.floorPaise)}. Give a little each round. Reply ONLY JSON {"offerPaise":<int paise>,"message":"<short friendly Hinglish line>","accept":<bool>}. Set accept=true only if the buyer's last offer is at or above a price you're happy with.`
+    : `You are the buyer agent haggling for "${c.product}". The seller opened at ${rupees(c.askPaise)}; its published list price is ${rupees(c.listPaise)} and you want the best discount, never offering above ${rupees(c.askPaise)}. Open low and rise a little each round. Reply ONLY JSON {"offerPaise":<int paise>,"message":"<short polite Hinglish line>","accept":<bool>}. Set accept=true only if the merchant's last offer is low enough to be a good deal.`;
 
 async function modelOffer(c: TurnCtx): Promise<{ offer: Offer; verified: boolean } | null> {
   try {
@@ -113,20 +130,20 @@ async function modelOffer(c: TurnCtx): Promise<{ offer: Offer; verified: boolean
 
 /** Deterministic fallback: a concession curve that always converges in the band. */
 function mockOffer(c: TurnCtx): Offer {
-  const deal = c.floorPaise + Math.round((c.listPaise - c.floorPaise) * 0.35); // buyer-favoured midpoint
+  const deal = c.floorPaise + Math.round((c.askPaise - c.floorPaise) * 0.35); // buyer-favoured, below list
   const progress = Math.min(1, c.round / c.maxRounds);
   const ease = progress * progress * (3 - 2 * progress); // smoothstep
   if (c.side === "merchant") {
-    const offer = Math.round(c.listPaise - (c.listPaise - deal) * ease);
+    const offer = Math.round(c.askPaise - (c.askPaise - deal) * ease);
     const accept = c.lastOtherOfferPaise !== null && c.lastOtherOfferPaise >= deal - 1;
     const message = accept
       ? `Theek hai, ${rupees(c.lastOtherOfferPaise!)} mein pakka — deal!`
       : c.round <= 1
-        ? `Daam hai ${rupees(c.listPaise)}, par aapke liye ${rupees(offer)} kar deta hoon.`
+        ? `Daam hai ${rupees(c.askPaise)}, par aapke liye ${rupees(offer)} kar deta hoon.`
         : `${rupees(offer)} — isse kam nahi, quality dekhiye.`;
     return { offerPaise: offer, message, accept };
   }
-  const low = Math.max(1, c.floorPaise - Math.round((c.listPaise - c.floorPaise) * 0.5));
+  const low = Math.max(1, c.floorPaise - Math.round((c.askPaise - c.floorPaise) * 0.5));
   const offer = Math.round(low + (deal - low) * ease);
   const accept = c.lastOtherOfferPaise !== null && c.lastOtherOfferPaise <= deal + 1;
   const message = accept
@@ -140,39 +157,42 @@ function mockOffer(c: TurnCtx): Offer {
 export async function negotiate(input: NegotiationInput): Promise<Negotiation> {
   const listPaise = Math.round(input.listPaise);
   const bargainBps = Math.max(0, Math.min(5000, Math.round(input.bargainBps)));
+  const askPaise = Math.round(listPaise * (1 + bargainBps / 10_000));
   const floorPaise = Math.max(1, Math.round(listPaise * (1 - bargainBps / 10_000)));
   const maxRounds = Math.max(1, Math.min(5, input.maxRounds ?? 3));
   const live = input.useModel ?? !flag("OG_MOCK");
 
   const rounds: BargainTurn[] = [
-    { by: "merchant", offerPaise: listPaise, message: `Namaste! ${input.product} ka daam ${rupees(listPaise)} hai.` },
+    { by: "merchant", offerPaise: askPaise, message: `Namaste! ${input.product} ka daam ${rupees(askPaise)} hai.`, via: "local" },
   ];
   let usedModel = false;
-  let lastMerchant = listPaise;
+  let ogTurns = 0;
+  let lastMerchant = askPaise;
   let lastBuyer: number | null = null;
   let agreedPaise: number | null = null;
 
   for (let round = 1; round <= maxRounds; round++) {
     for (const side of ["buyer", "merchant"] as const) {
       const lastOther = side === "buyer" ? lastMerchant : lastBuyer;
-      const ctx: TurnCtx = { side, product: input.product, listPaise, floorPaise, round, maxRounds, lastOtherOfferPaise: lastOther, history: rounds };
+      const ctx: TurnCtx = { side, product: input.product, listPaise, askPaise, floorPaise, round, maxRounds, lastOtherOfferPaise: lastOther, history: rounds };
       const res = live ? await modelOffer(ctx) : null;
+      if (res) ogTurns++;
       if (res?.verified) usedModel = true;
       const raw = res?.offer ?? mockOffer(ctx);
 
-      // guardrails. Merchant stays in [floor, list] and never raises its ask.
-      // The buyer may lowball below the floor (the merchant just won't accept),
-      // but never offers above the list price, and never lowers its own bid.
+      // guardrails. The merchant stays in [floor, ask] and never raises its
+      // ask. The buyer may lowball below the floor (the merchant just won't
+      // accept), but never offers above the ask, and never lowers its own bid.
       let offer = Math.round(raw.offerPaise);
       if (side === "merchant") {
-        offer = Math.min(lastMerchant, Math.max(floorPaise, Math.min(listPaise, offer)));
+        offer = Math.min(lastMerchant, Math.max(floorPaise, Math.min(askPaise, offer)));
       } else {
-        offer = Math.max(1, Math.min(listPaise, offer));
+        offer = Math.max(1, Math.min(askPaise, offer));
         if (lastBuyer !== null) offer = Math.max(offer, lastBuyer);
       }
       const message = raw.message.slice(0, 160);
 
-      rounds.push({ by: side, offerPaise: offer, message });
+      rounds.push({ by: side, offerPaise: offer, message, via: res ? "0g" : "local" });
       if (side === "merchant") lastMerchant = offer;
       else lastBuyer = offer;
 
@@ -182,7 +202,7 @@ export async function negotiate(input: NegotiationInput): Promise<Negotiation> {
       const crossed = lastBuyer !== null && lastBuyer >= lastMerchant;
       if (raw.accept || crossed) {
         const meet = raw.accept && side === "merchant" ? (lastBuyer ?? lastMerchant) : lastMerchant;
-        agreedPaise = Math.max(floorPaise, Math.min(listPaise, meet));
+        agreedPaise = Math.max(floorPaise, Math.min(askPaise, meet));
         break;
       }
     }
@@ -192,18 +212,21 @@ export async function negotiate(input: NegotiationInput): Promise<Negotiation> {
   if (agreedPaise === null) {
     // settle at the midpoint of the final offers, inside the band
     const mid = lastBuyer !== null ? Math.round((lastBuyer + lastMerchant) / 2) : lastMerchant;
-    agreedPaise = Math.max(floorPaise, Math.min(listPaise, mid));
-    rounds.push({ by: "merchant", offerPaise: agreedPaise, message: `Chaliye, beech mein ${rupees(agreedPaise)} — deal pakki!` });
+    agreedPaise = Math.max(floorPaise, Math.min(askPaise, mid));
+    rounds.push({ by: "merchant", offerPaise: agreedPaise, message: `Chaliye, beech mein ${rupees(agreedPaise)} — deal pakki!`, via: "local" });
   }
 
-  const savedPaise = listPaise - agreedPaise;
+  const savedPaise = askPaise - agreedPaise;
   return {
     listPaise,
+    askPaise,
     floorPaise,
     agreedPaise,
     savedPaise,
-    savedBps: listPaise > 0 ? Math.round((savedPaise / listPaise) * 10_000) : 0,
+    savedBps: askPaise > 0 ? Math.round((savedPaise / askPaise) * 10_000) : 0,
+    vsListPaise: listPaise - agreedPaise,
     rounds,
     usedModel,
+    ogTurns,
   };
 }

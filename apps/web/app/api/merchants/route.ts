@@ -26,6 +26,8 @@ export async function GET() {
           url: r.endpoint,
           priceInrPaise: r.priceInrPaise,
           priceUsdcAtomic: paiseToUsdcAtomic(r.priceInrPaise, fx).toString(),
+          /** The merchant's published ± haggling band (sangam.bargain), bps of the price. */
+          bargainBps: r.bargainBps ?? null,
           payTo: r.hederaPayTo,
           upiHandle: r.upiHandle,
           status: r.status ?? null,

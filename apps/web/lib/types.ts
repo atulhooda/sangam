@@ -36,6 +36,8 @@ export type Me = {
   shop: {
     upiHandle: string;
     priceInrPaise: number;
+    /** ± haggling band published as sangam.bargain, in bps of the price. */
+    bargainBps?: number;
     endpoint: string | null;
     depositAccountId: string | null;
     /** Set once the merchant owns its ENS name (token in its wallet, its own resolver). */
