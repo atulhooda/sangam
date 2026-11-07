@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Spinner } from "../components/ui";
 import { AgentRunOverlay, runPayAsAgent, useAgentRun } from "../components/agent-run";
 import { rupees } from "../dashboard/format";
@@ -107,7 +108,9 @@ export function BargainButton({ ensName, disabled, onDone }: { ensName: string; 
         ⚖︎ Bargain
       </button>
 
-      {open && (
+      {/* portalled to <body>: the merchant list lives inside a 3D-tilted Card, and its
+          transform would otherwise trap this fixed overlay inside the card and clip it */}
+      {open && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-4 backdrop-blur-sm sm:items-center" onClick={close}>
           <div
             className="flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-line bg-surface shadow-2xl"
@@ -150,7 +153,8 @@ export function BargainButton({ ensName, disabled, onDone }: { ensName: string; 
               {phase === "negotiating" && <p className="text-center text-xs text-muted">The merchant's agent opens at list + margin and the deal always lands inside its published ± band on ENS.</p>}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       <AgentRunOverlay state={agentRun.state} onClose={agentRun.close} />
