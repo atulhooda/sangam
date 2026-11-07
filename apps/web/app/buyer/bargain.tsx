@@ -33,7 +33,7 @@ type BargainResult = {
 };
 type Phase = "negotiating" | "dealt" | "paying" | "paid" | "error";
 
-export function BargainButton({ ensName, disabled, onDone }: { ensName: string; disabled?: boolean; onDone?: () => void }) {
+export function BargainButton({ ensName, rail = "hedera", disabled, onDone }: { ensName: string; rail?: "hedera" | "sepolia"; disabled?: boolean; onDone?: () => void }) {
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<Phase>("negotiating");
   const [data, setData] = useState<BargainResult | null>(null);
@@ -78,11 +78,13 @@ export function BargainButton({ ensName, disabled, onDone }: { ensName: string; 
   const pay = useCallback(async () => {
     if (!data) return;
     setPhase("paying");
+    // The same agent and rail as the desk's Buy button: it reads the agreed
+    // invoice's 402, checks it against ENS (price + published margin), signs.
     const { verdict } = await runPayAsAgent(
       agentRun.run,
       { title: "Paying the bargained price", target: ensName },
-      { kind: "url", url: data.payUrl },
-      "/api/pay",
+      { url: data.payUrl, rail },
+      "/api/agent/buy",
     );
     if (verdict.kind === "paid") {
       setPhase("paid");
@@ -91,7 +93,7 @@ export function BargainButton({ ensName, disabled, onDone }: { ensName: string; 
       setError(verdict.kind === "refused" ? verdict.message : verdict.kind === "error" ? verdict.message : "Payment nahi hui.");
       setPhase("error");
     }
-  }, [data, ensName, agentRun.run, onDone]);
+  }, [data, ensName, rail, agentRun.run, onDone]);
 
   const close = () => {
     clearTimers();
@@ -147,7 +149,7 @@ export function BargainButton({ ensName, disabled, onDone }: { ensName: string; 
                   Pay {rupees(data.agreedPaise)} as agent →
                 </button>
               )}
-              {phase === "paying" && <p className="flex items-center justify-center gap-2 text-sm text-muted"><Spinner /> Signing USDC on Hedera…</p>}
+              {phase === "paying" && <p className="flex items-center justify-center gap-2 text-sm text-muted"><Spinner /> {rail === "sepolia" ? "Agent paying USDC from your MetaMask…" : "Signing USDC on Hedera…"}</p>}
               {phase === "paid" && <p className="text-center text-sm font-medium text-ok">Paid {data && rupees(data.agreedPaise)} — settlement is running below. 🎉</p>}
               {phase === "error" && <button onClick={() => void start()} className="w-full rounded-full border border-line px-5 py-2.5 text-sm font-medium transition-colors hover:border-accent">Try again</button>}
               {phase === "negotiating" && <p className="text-center text-xs text-muted">The merchant's agent opens at list + margin and the deal always lands inside its published ± band on ENS.</p>}

@@ -72,9 +72,11 @@ export function createAgentBuyer(opts: {
   /** Per-payment cap in USD, e.g. "$1". */
   maxPerPayment: string;
   guard?: (quote: PaymentRequirements) => Promise<unknown>;
+  /** Written into the signed Hedera transfer (shows on HashScan): who paid, and that it was an agent. */
+  memo?: string;
 }) {
   const client = x402Client.fromConfig({
-    schemes: [hederaClientScheme(opts.hedera.accountId, opts.hedera.privateKey)],
+    schemes: [hederaClientScheme(opts.hedera.accountId, opts.hedera.privateKey, opts.memo)],
     spendControls: { maxAmountPerPayment: opts.maxPerPayment as `$${string}` },
     paymentRequirementsSelector: (_v, accepts) => {
       const q = accepts.find((a) => a.network === HEDERA_NETWORK) ?? accepts[0];

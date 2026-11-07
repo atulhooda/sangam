@@ -32,12 +32,15 @@ export function BoloAgent({
   name,
   demo = false,
   targets,
+  rail,
   onDone,
 }: {
   role: "buyer" | "merchant";
   name?: string;
   demo?: boolean;
   targets?: BuyTarget[];
+  /** Which rail a spoken "yes" pays on — the same one the desk's Buy button uses. */
+  rail?: "hedera" | "sepolia";
   onDone?: () => void;
 }) {
   const [enabled, setEnabled] = useState<boolean | null>(demo ? true : null);
@@ -56,6 +59,8 @@ export function BoloAgent({
   const targetsRef = useRef<BuyTarget[]>(targets ?? []);
   targetsRef.current = targets ?? [];
   const targetRef = useRef<BuyTarget | null>(null);
+  const railRef = useRef(rail ?? "hedera");
+  railRef.current = rail ?? "hedera";
   const buyingRef = useRef(false);
 
   useEffect(() => {
@@ -151,7 +156,7 @@ export function BoloAgent({
       setError(null);
       // A spoken yes: Bolo already said "खरीद रही हूँ" on the call.
       if (!saidByBolo) void sayLine(`ठीक है, ${t.ensName.replace(/\.sangam\.eth$/, "")} से खरीद रही हूँ।`);
-      const { verdict } = await runPayAsAgent(agentRun.run, { title: "Buying by voice", target: t.ensName }, { ensName: t.ensName }, "/api/agent/buy");
+      const { verdict } = await runPayAsAgent(agentRun.run, { title: "Buying by voice", target: t.ensName }, { ensName: t.ensName, rail: railRef.current }, "/api/agent/buy");
       if (verdict.kind === "paid") {
         setBought(`${t.ensName} — ho gaya ✓`);
         void sayLine("हो गया! पेमेंट पूरा हुआ।");

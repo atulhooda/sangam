@@ -57,11 +57,12 @@ export async function POST(req: Request) {
     url?: string;
     product?: string;
   };
-  const agent = (guard?: Parameters<typeof createAgentBuyer>[0]["guard"]) =>
+  const agent = (guard?: Parameters<typeof createAgentBuyer>[0]["guard"], memo?: string) =>
     createAgentBuyer({
       hedera: { accountId: env("CUSTOMER_ACCOUNT_ID"), privateKey: env("CUSTOMER_PRIVATE_KEY") },
       maxPerPayment: envOr("CUSTOMER_MAX_PER_PAYMENT", "$1"),
       guard,
+      memo,
     });
   const origin = new URL(req.url).origin;
 
@@ -128,7 +129,8 @@ export async function POST(req: Request) {
     if (body.kind === "url") await assertUrlMerchantOrigin(url, option);
     await assertBudgetAllows(BigInt(option.amount));
 
-    const { buy } = agent(guard);
+    // The memo rides in the signed transfer: HashScan shows an agent paid this.
+    const { buy } = agent(guard, `Sangam AI agent | x402 | ${url.host} | ${what}`);
     const purchase = await buy<Record<string, unknown>>(url);
     if (purchase.status >= 400 || !purchase.settle?.success) {
       return Response.json({ error: `merchant answered ${purchase.status}`, detail: purchase.body }, { status: 502 });

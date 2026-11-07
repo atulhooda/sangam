@@ -3,6 +3,7 @@ import { decodePaymentRequiredHeader } from "@x402/core/http";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import type { PaymentRequirements, SettleResponse } from "@x402/core/types";
 import { wrapFetchWithPayment, x402HTTPClient } from "@x402/fetch";
+import { AccountId, Client, Hbar, PrivateKey as SdkPrivateKey, TokenId, TransactionId, TransferTransaction } from "@hiero-ledger/sdk";
 import { PrivateKey, createClientHederaSigner } from "@x402/hedera";
 import { ExactHederaScheme as ExactHederaClientScheme } from "@x402/hedera/exact/client";
 import { ExactHederaScheme as ExactHederaServerScheme } from "@x402/hedera/exact/server";
@@ -31,9 +32,57 @@ export const hederaFacilitatorClient = () => new HTTPFacilitatorClient({ url: fa
 export const hederaServerScheme = () =>
   new ExactHederaServerScheme({ defaultAssets: { [HEDERA_NETWORK]: { asset: usdcTokenId(), decimals: USDC_DECIMALS } } });
 
-/** Buyer-side Hedera scheme registration that signs with the given account. */
-export function hederaClientScheme(accountId: string, privateKey: string) {
-  const signer = createClientHederaSigner(accountId, PrivateKey.fromStringECDSA(privateKey), { network: HEDERA_NETWORK });
+/** Hedera caps a transaction memo at 100 bytes. */
+const MEMO_MAX_BYTES = 100;
+
+/**
+ * The same partially-signed USDC transfer the SDK's signer builds, plus a
+ * transaction memo. The memo is part of the signed transaction, so it shows
+ * on HashScan next to the transfer: on-chain proof that an agent, not a
+ * person, made this payment (the SDK signer has no memo option).
+ */
+function memoSigner(accountId: string, privateKey: string, memo: string): ReturnType<typeof createClientHederaSigner> {
+  const base = createClientHederaSigner(accountId, PrivateKey.fromStringECDSA(privateKey), { network: HEDERA_NETWORK });
+  // Our own SDK copy (@x402/hedera pins another): the signing key must match the transaction's SDK.
+  const key = SdkPrivateKey.fromStringECDSA(privateKey);
+  const payer = AccountId.fromString(accountId);
+  const trimmed = Buffer.from(memo, "utf8").subarray(0, MEMO_MAX_BYTES).toString("utf8").replace(/\uFFFD$/, "");
+  return {
+    ...base,
+    createPartiallySignedTransferTransaction: async (requirements: PaymentRequirements) => {
+      const feePayer = requirements.extra?.feePayer;
+      if (typeof feePayer !== "string") throw new Error("feePayer is required in paymentRequirements.extra");
+      const amount = BigInt(requirements.amount);
+      if (amount <= 0n) throw new Error("amount must be greater than zero");
+      const payTo = AccountId.fromString(requirements.payTo);
+      const tx = new TransferTransaction().setTransactionMemo(trimmed);
+      if (requirements.asset === "HBAR" || requirements.asset === "hbar") {
+        tx.addHbarTransfer(payer, Hbar.fromTinybars((-amount).toString()));
+        tx.addHbarTransfer(payTo, Hbar.fromTinybars(amount.toString()));
+      } else {
+        const tokenId = TokenId.fromString(requirements.asset);
+        tx.addTokenTransfer(tokenId, payer, Number(-amount));
+        tx.addTokenTransfer(tokenId, payTo, Number(amount));
+      }
+      tx.setTransactionId(TransactionId.generate(AccountId.fromString(feePayer)));
+      const client = Client.forTestnet();
+      try {
+        tx.freezeWith(client);
+        const signed = await tx.sign(key);
+        return Buffer.from(signed.toBytes()).toString("base64");
+      } finally {
+        client.close();
+      }
+    },
+  };
+}
+
+/**
+ * Buyer-side Hedera scheme registration that signs with the given account.
+ * With `memo`, every transfer it signs carries that memo on chain.
+ */
+export function hederaClientScheme(accountId: string, privateKey: string, memo?: string) {
+  const signer = memo ? memoSigner(accountId, privateKey, memo) : createClientHederaSigner(accountId, PrivateKey.fromStringECDSA(privateKey), { network: HEDERA_NETWORK });
   return { network: "hedera:*" as const, client: new ExactHederaClientScheme(signer) };
 }
 

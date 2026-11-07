@@ -334,7 +334,7 @@ export function BuyerDesk({ me }: { me: Me }) {
                       ) : (
                         <span className="rounded-full bg-warnbg px-2 py-0.5 text-[11px] font-medium text-warn">{m.status ?? "unverified"}</span>
                       )}
-                      <BargainButton ensName={m.ensName} disabled={!w || running || !m.verified} onDone={() => void loadWallet()} />
+                      <BargainButton ensName={m.ensName} rail={rail} disabled={!w || running || !m.verified} onDone={() => void loadWallet()} />
                       <button
                         onClick={() => runAgent([m.ensName])}
                         disabled={!w || running || !m.verified}
@@ -413,6 +413,7 @@ export function BuyerDesk({ me }: { me: Me }) {
       <BoloAgent
         role="buyer"
         targets={verified.map((m) => ({ ensName: m.ensName, priceInrPaise: m.priceInrPaise }))}
+        rail={rail}
         onDone={() => void loadWallet()}
       />
     </div>

@@ -29,16 +29,17 @@ export async function POST(req: Request) {
   if (!me) return Response.json({ error: "Sign in as a buyer first." }, { status: 401 });
   const body = (await req.json().catch(() => ({}))) as { ensName?: string; url?: string; rail?: string };
   // From the buyer's own MetaMask (Sepolia), by ENS name: see lib/server/wallet-buy.ts.
-  if (body.rail === "sepolia") return walletBuy(me, body);
+  if (body.rail === "sepolia") return walletBuy(me, body, new URL(req.url).origin);
 
   const wallet = me.identity.wallet;
   if (!wallet) return Response.json({ error: "Connect your agent wallet first." }, { status: 400 });
 
-  const agent = (guard?: Parameters<typeof createAgentBuyer>[0]["guard"]) =>
+  const agent = (guard?: Parameters<typeof createAgentBuyer>[0]["guard"], memo?: string) =>
     createAgentBuyer({
       hedera: { accountId: wallet.accountId, privateKey: agentSigningKey() },
       maxPerPayment: envOr("CUSTOMER_MAX_PER_PAYMENT", "$1"),
       guard,
+      memo,
     });
 
   // Either a merchant by ENS name, or a buyer-pasted link (vetted the same way
@@ -86,7 +87,9 @@ export async function POST(req: Request) {
       return Response.json({ error: `Over your agent's budget: spent ${spent} of ${limit} (atomic USDC), this costs ${price}.` }, { status: 429 });
     }
 
-    const { buy } = agent(guard);
+    // On-chain proof the payment was agentic: the memo rides in the signed
+    // transfer and shows on HashScan. 100 bytes max.
+    const { buy } = agent(guard, `Sangam AI agent | x402 | ${target} | buyer ${wallet.accountId}`);
     let purchase = await buy<Record<string, unknown>>(url);
     if (purchase.status === 402) {
       // A top-up from seconds ago may not be visible to the facilitator's
