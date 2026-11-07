@@ -146,7 +146,7 @@ action:
 - "confirm": both are known but one sounded unclear, garbled or unusual (odd name, strange amount, conflicting words).
 - "ask": something is missing.
 - "cancel": they want to stop / not make the bill.
-- "chitchat": unrelated talk.
+- "chitchat": unrelated talk, OR words that are garbled, cut off or make no sense (background noise often comes through as random words). Then reply asks them to say it again; never turn noise into a name or an amount.
 reply: only for "chitchat": one short, warm Hindi sentence in Devanagari that steers back to the bill. You only know about this bill: never state facts about anything else (weather, news, prices, people); say you can only help with bills. No numbers. Otherwise "".`;
 
 /**
@@ -193,7 +193,7 @@ Given the conversation and the buyer's latest words (from speech recognition), a
 - "pay": wants to pay now ("bhar do", "pay kar do", "de do").
 - "amount": asks how much / whose bill. "status": asks whether it's paid.
 - "yes" / "no": answering your last question ("haan", "theek hai" / "nahi", "abhi nahi", "ruko").
-- "chitchat": anything else.
+- "chitchat": anything else, including garbled or meaningless words (noise): then the reply asks them to say it again. Never guess an intent from unclear words.
 reply: only for "chitchat": one short, warm Hindi sentence in Devanagari steering back to the bill. You only know about this bill: never state facts about anything else; say you can only help with the bill. No numbers. Otherwise "".`;
 
 /** The buyer's latest words → what they want. A spoken "no" always wins over pay/yes. */
@@ -219,7 +219,7 @@ You get the list of shops the buyer can buy from, the conversation, and the buye
 Answer ONLY with JSON: {"shop": string|null, "action": "buy"|"yes"|"no"|"ask"|"chitchat", "reply": string}
 - shop: the ensName from the list the buyer means (match by meaning/sound), or null. Never a shop not in the list.
 - "buy": wants to buy from a shop ("bakery se khareedo", "ticket le lo"). "yes"/"no": answering your last question ("haan", "theek hai" / "nahi", "ruko").
-- "ask": wants to buy but didn't say which shop, or asks what's available. "chitchat": anything else.
+- "ask": wants to buy but didn't say which shop, or asks what's available. "chitchat": anything else, including garbled or meaningless words (background noise): then the reply asks them to say it again. Never pick a shop from unclear words.
 reply: only for "chitchat": one short, warm Hindi sentence in Devanagari steering back to buying. You only know these shops: never state other facts. No numbers. Otherwise "".`;
 
 /** Which shop the buyer means, and whether they're asking, agreeing or refusing. */

@@ -196,7 +196,14 @@ export function BoloAgent({
     [pollSession],
   );
 
+  const startingRef = useRef(false);
   const start = useCallback(async () => {
+    // A double tap (touch + click) used to open two sessions: two greetings,
+    // two recognisers, both answering. One session at a time.
+    if (startingRef.current) return;
+    startingRef.current = true;
+    voice.current?.stop();
+    setPhase("connecting");
     setError(null);
     setResult(null);
     setCaptions([]);
@@ -230,6 +237,8 @@ export function BoloAgent({
     } catch (err) {
       setError((err as Error).message);
       setPhase("idle");
+    } finally {
+      startingRef.current = false;
     }
   }, [role, merchantFinish, onAction]);
 
@@ -286,11 +295,10 @@ export function BoloAgent({
       setPhase((p) => DEMO_CYCLE[(DEMO_CYCLE.indexOf(p as Phase) + 1) % DEMO_CYCLE.length]);
       return;
     }
+    // Bolo greets in her own voice once connected; the browser's "Hello"
+    // on top of it was the greeting people heard twice.
     if (inCall) hangUp();
-    else {
-      sayHello();
-      void start();
-    }
+    else void start();
   };
   const panelSide = pos.x + SIZE / 2 < window.innerWidth / 2 ? "left" : "right";
   const panelDown = pos.y < 320;

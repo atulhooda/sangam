@@ -65,8 +65,20 @@ const ECHO_TAIL_MS = 400;
  * frames within ~10 dB of it; quieter voices in the room (and fan/street
  * noise) become silence. A short hangover keeps word endings intact.
  */
-const NOISE_FLOOR = 0.012; // RMS below this is never speech
+const NOISE_FLOOR = 0.02; // RMS below this is never speech, however quiet the room
 const GATE_RATIO = 0.35; // pass frames ≥ 35% of the speaker's recent peak (~-9 dB)
+/*
+ * Crowded rooms: the floor also follows the ambient level. A frame is speech
+ * only if it is well above what the room has been doing (AMBIENT_RATIO ×, i.e.
+ * ~11 dB), so a steady crowd, traffic or music never reaches the recogniser.
+ * The ambient estimate drops fast and climbs slowly, so the caller's own
+ * voice doesn't get counted as "room".
+ */
+const AMBIENT_RATIO = 3.5;
+const AMBIENT_RISE = 0.02; // base rate; ×10 for quiet frames getting louder, ÷10 during speech
+const AMBIENT_FALL = 0.2; // per frame, when quieter
+/** A transcript is only believed when the caller's voiced audio since the last turn adds up to this. */
+const MIN_VOICED_MS = 280;
 // The peak relaxes so a genuinely quieter speaker isn't locked out — but only
 // while sound is actually arriving. Silence (Bolo thinking, Bolo talking, the
 // caller pausing) says nothing about how loud the caller is, so it must not
@@ -74,6 +86,8 @@ const GATE_RATIO = 0.35; // pass frames ≥ 35% of the speaker's recent peak (~-
 const PEAK_HALF_LIFE_MS = 6000; // of audible audio, not wall-clock time
 const GATE_HANGOVER_MS = 350;
 const GATE_PREROLL_MS = 250; // look-ahead, so a word's soft onset isn't clipped
+/** A single loud frame with silence on both sides is a click or a clap, not a word. */
+const MIN_BURST_FRAMES = 2;
 
 /*
  * Smooth playback: 100 ms packets, kept ~300 ms ahead of real time so the
@@ -84,6 +98,18 @@ const PACKET_MS = 100;
 const PREBUFFER_MS = 300;
 
 type Wire = { send: (s: string) => void; close: (code?: number) => void };
+
+/**
+ * What the recogniser writes when it was fed noise: a lone filler, a
+ * one-letter fragment, or the stock lines it learned from videos.
+ */
+const NOISE_LINES = ["धन्यवाद", "शुक्रिया", "thank you", "thanks", "subscribe", "सब्सक्राइब", "like share", "bye", "हम्म", "हम्", "उम्म", "अ", "आ", "ओ", "ह", "म", "please", "music", "संगीत"];
+function isNoiseText(text: string): boolean {
+  const letters = text.replace(/[^\p{L}\p{N}]/gu, "");
+  if (letters.length < 2) return true;
+  const norm = text.toLowerCase().replace(/[\s.,!?।॥"'“”()-]+/g, " ").trim();
+  return NOISE_LINES.includes(norm);
+}
 
 export class BoloSession {
   /** The id the server issued for this session — the callback must report it, not a fresh one. */
@@ -97,6 +123,11 @@ export class BoloSession {
   private synthQueue: Promise<void> = Promise.resolve();
   /** Loudest-voice gate state. */
   private voicePeak = 0;
+  /** What the room sounds like when the caller isn't talking (RMS). */
+  private ambient = NOISE_FLOOR;
+  /** Voiced (gate-passing) audio heard since the last turn ended, in ms. */
+  private voicedMs = 0;
+  private prevLoud = false;
   /** Audio-time (ms of mic audio received) and the gate's look-ahead queue. */
   private audioMs = 0;
   private lastLoudEnd = -Infinity;
@@ -170,7 +201,10 @@ export class BoloSession {
     // Muted frames (Bolo talking, or her echo tail) never pass, whatever their level.
     const muted = this.isSpeaking();
     const loud = !muted && this.isMainVoice(pcm, ms);
-    if (loud) this.lastVoiceAt = Date.now();
+    if (loud) {
+      this.lastVoiceAt = Date.now();
+      this.voicedMs += ms;
+    }
     const start = this.audioMs;
     this.audioMs += ms;
     this.delayLine.push({ pcm, start, end: this.audioMs, loud, muted });
@@ -188,10 +222,15 @@ export class BoloSession {
       const next = this.delayLine[0];
       if (!next || next.end > this.audioMs - GATE_PREROLL_MS) break;
       const head = this.delayLine.shift()!;
-      if (head.loud) this.lastLoudEnd = head.end;
-      const loudAhead = this.delayLine.some((f) => f.loud && f.start - head.end < GATE_PREROLL_MS);
+      const ahead = this.delayLine.filter((f) => f.loud && f.start - head.end < GATE_PREROLL_MS).length;
+      // A loud frame counts only as part of a burst: a frame before or after it is loud too.
+      const loud = head.loud && (this.prevLoud || ahead >= 1);
+      this.prevLoud = loud;
+      if (loud) this.lastLoudEnd = head.end;
+      else if (head.loud) this.voicedMs = Math.max(0, this.voicedMs - ((head.end - head.start) || 0)); // a blip, not a word
+      const loudAhead = ahead >= MIN_BURST_FRAMES;
       const inHangover = head.start - this.lastLoudEnd < GATE_HANGOVER_MS;
-      const pass = !head.muted && (head.loud || loudAhead || inHangover);
+      const pass = !head.muted && (loud || loudAhead || inHangover);
       const data = pass ? head.pcm.toString("base64") : Buffer.alloc(head.pcm.length).toString("base64");
       this.stt!.send(JSON.stringify({ audio: { data, encoding: "audio/wav", sample_rate: this.inRate } }));
     }
@@ -207,12 +246,19 @@ export class BoloSession {
       sum += s * s;
     }
     const level = Math.sqrt(sum / n);
+    // The room: learned from frames that aren't speech (fast), and only a
+    // sliver from speech frames (so a long sentence can't become "room" and
+    // gate the caller out mid-sentence; a room that really got louder still
+    // catches up over a minute or so).
+    const floor = Math.max(NOISE_FLOOR, this.ambient * AMBIENT_RATIO);
+    const speechLike = level > floor;
+    this.ambient += (level - this.ambient) * (speechLike ? AMBIENT_RISE / 10 : level > this.ambient ? AMBIENT_RISE * 10 : AMBIENT_FALL);
     // Only audible frames move the peak: they raise it, and they slowly relax it.
-    if (level > NOISE_FLOOR) {
+    if (level > floor) {
       this.voicePeak *= Math.pow(0.5, ms / PEAK_HALF_LIFE_MS);
       this.voicePeak = Math.max(this.voicePeak, level);
     }
-    return level > NOISE_FLOOR && level >= this.voicePeak * GATE_RATIO;
+    return level > floor && level >= this.voicePeak * GATE_RATIO;
   }
 
   /** The browser echoes our mark when its playback really reaches it: the truest "done speaking". */
@@ -252,6 +298,12 @@ export class BoloSession {
         // Half-duplex: nothing heard while Bolo is talking counts as a turn.
         if (this.isSpeaking()) return;
         const text = msg.data.transcript.trim();
+        // Noise that slipped past the gate comes back as a word or two. Nothing
+        // counts until the caller has actually voiced enough audio this turn.
+        if (this.voicedMs < MIN_VOICED_MS || isNoiseText(text)) {
+          console.log(`[bolo] dropped as noise (${Math.round(this.voicedMs)} ms voiced): "${text.slice(0, 60)}"`);
+          return;
+        }
         // Each message is a new segment, not a revision: "रमेश के लिए।" then
         // "₹500 का invoice बनाओ।". Replacing (as this used to) lost the name.
         this.utterance = this.utterance ? `${this.utterance} ${text}` : text;
@@ -293,6 +345,7 @@ export class BoloSession {
     const said = this.utterance.trim();
     if (!said || this.busy || this.ended || this.isSpeaking()) return;
     this.utterance = "";
+    this.voicedMs = 0;
     this.busy = true;
     const t0 = Date.now();
     try {
@@ -458,6 +511,7 @@ export class BoloSession {
     this.pendingSays++;
     // Anything half-heard before she starts talking is dropped, not answered later.
     this.utterance = "";
+    this.voicedMs = 0;
     if (this.utterTimer) clearTimeout(this.utterTimer);
     // Start synthesising now (streamed: audio arrives while the rest is still
     // being made), even if an earlier line is still being sent.

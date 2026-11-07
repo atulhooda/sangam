@@ -110,7 +110,9 @@ export class BoloVoice {
   async start(): Promise<void> {
     this.setPhase("connecting");
     const mic = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      // No automatic gain: in a crowded room it amplifies the crowd between
+      // the caller's words. Noise suppression and echo cancellation stay on.
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: false },
     });
     // stop() can land while the permission prompt is open. A stopped instance
     // must not go on to open the socket: it would spend the single-use token.
